@@ -360,9 +360,9 @@ static void tim3_setup(void)
     rcc_periph_reset_pulse(RST_TIM3);
 
     gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ,
-                      GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_TIM3_CH1 | GPIO_TIM3_CH2);
+                      GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_TIM3_CH1 | GPIO_TIM3_CH2); // PA6, PA7
     gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_50_MHZ,
-                      GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_TIM3_CH3 | GPIO_TIM3_CH4);
+                      GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_TIM3_CH3 | GPIO_TIM3_CH4); // PB0, PB1
 
     timer_set_mode(TIM3, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
     timer_set_prescaler(TIM3, (3 - 1));

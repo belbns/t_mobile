@@ -28,29 +28,25 @@ void oneStep(uint8_t pos, uint8_t stpr);
 
 extern SemaphoreHandle_t xSteppMutex[2];
 extern EventGroupHandle_t xEventGroupADC;
-//extern commands_counter cmd_cnt;
 
 
-motor_ctrl motors =
-	{
-			.state = MOTOR_OFF, .gear = GEAR_0, .value1 = 0, .value2 = 0,
-			.pre_value = 0, .need_update1 = 0, .need_update2 = 0, .checked = false
-	};
+motor_ctrl motors = {
+    .state = MOTOR_OFF, .gear = GEAR_0, .value1 = 0, .value2 = 0,
+	.pre_value = 0, .need_update1 = 0, .need_update2 = 0, .checked = false
+};
 
-stepper stepp[2] =
-	{
-		{ STEP_OFF, 0, 0, 0, 0, 0, 0, false },
-		{ STEP_OFF, 0, 0, 0, 0, 0, 0, false }
-	};
+stepper stepp[2] = {
+    { STEP_OFF, 0, 0, 0, 0, 0, 0, false },
+	{ STEP_OFF, 0, 0, 0, 0, 0, 0, false }
+};
 
 
-mob_leds leds[4] =
-	{
-		{ .port = LED0_PORT, .pin = LED0_PIN, .on = 0, .mode = LED_OFF, .checked = false},
-		{ .port = LED1_PORT, .pin = LED1_PIN, .on = 0, .mode = LED_OFF, .checked = false},
-		{ .port = LED2_PORT, .pin = LED2_PIN, .on = 0, .mode = LED_OFF, .checked = false},
-		{ .port = LED3_PORT, .pin = LED3_PIN, .on = 0, .mode = LED_OFF, .checked = false},
-	};
+mob_leds leds[4] = {
+    { .port = LED0_PORT, .pin = LED0_PIN, .on = 0, .mode = LED_OFF, .checked = false},
+	{ .port = LED1_PORT, .pin = LED1_PIN, .on = 0, .mode = LED_OFF, .checked = false},
+	{ .port = LED2_PORT, .pin = LED2_PIN, .on = 0, .mode = LED_OFF, .checked = false},
+	{ .port = LED3_PORT, .pin = LED3_PIN, .on = 0, .mode = LED_OFF, .checked = false},
+};
 
 servo_drive servo = {SERVO_ON, 90, 90, false};
 
@@ -58,11 +54,10 @@ uint8_t axle_stepper = AXLE_STEPPER;	// номер ШД эхо-локатора
 
 uint8_t axle_search = 0;
 
-const uint16_t step_pins[2][4] =
-	{
-		{ STEP1_PIN1, STEP1_PIN2, STEP1_PIN3, STEP1_PIN4 },
-		{ STEP2_PIN1, STEP2_PIN2, STEP2_PIN3, STEP2_PIN4 }
-	};
+const uint16_t step_pins[2][4] = {
+    { STEP1_PIN1, STEP1_PIN2, STEP1_PIN3, STEP1_PIN4 },
+	{ STEP2_PIN1, STEP2_PIN2, STEP2_PIN3, STEP2_PIN4 }
+};
 
 /*
 void vApplicationMallocFailedHook( void )
@@ -94,7 +89,6 @@ void vApplicationStackOverflowHook( TaskHandle_t pxTask, char *pcTaskName )
 /*
  * Callback функция системного таймера.
  * Используется для тактирования шаговых двигателей
- * и выключение устройства при наличии условий.
  */
 void vApplicationTickHook( void )
 {
@@ -102,22 +96,8 @@ void vApplicationTickHook( void )
 
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-    /*
-	EventBits_t uxBits = xEventGroupGetBitsFromISR(xEventGroupADC);
-
-	if ( uxBits &
-			(alarm_POWER_BUTTON_BIT |
-			alarm_CONTRL_OFF_VOLTAGE_BIT |
-			alarm_MOTORS_OFF_VOLTAGE_BIT)
-		)
-	{
-		//printf("Power_Off: %x\n", uxBits);
-		power_off();
-	}
-    */
-
-	// тактирование ШД
-	uint8_t i = stepp_count & 1;	// ШД0 - по четным тактам, ШД1 - по нечетным.
+	// тактирование ШД0 - по четным тактам, ШД1 - по нечетным.
+	uint8_t i = stepp_count & 1;	
 	// захватываем ШД
 	if ( xSemaphoreTakeFromISR( xSteppMutex[i], &xHigherPriorityTaskWoken ) == pdPASS )
 	{
@@ -206,8 +186,11 @@ void vApplicationTickHook( void )
 }
 
 
-// ======================================================================================
-
+/*
+    Установка режима ДПТ, таймер TIM3 в режиме PWM1 управляет моторами через L293D.
+    Для ДПТ1 используются каналы TIM_OC1 и TIM_OC2,
+    для ДПТ2 - TIM_OC3 и TIM_OC4.
+*/
 void set_motor_value(uint8_t mmask, int8_t value0, int8_t value1)
 {
 	uint16_t pulse0 = 0;
@@ -215,14 +198,13 @@ void set_motor_value(uint8_t mmask, int8_t value0, int8_t value1)
 
     if ( mmask & 1 )
     {
-    	// в 0 для исключения сквозных токов
+    	// в 0 для исключения сквозных токов 
         timer_set_oc_value(TIM3, TIM_OC1, 0);
         timer_set_oc_value(TIM3, TIM_OC2, 0);
 
-
     	if (value0 != 0)
         {
-        	pulse0 = abs(value0) & 0x3F;	// каждая 1 от пульта = 16 тактов
+        	pulse0 = abs(value0) & 0x3F;	// каждая 1 от пульта = 16 ступеней
         	pulse0 = pulse0 << 4;			// * 16
             if (pulse0 > PWM_MAX_VALUE)
             	pulse0 = PWM_MAX_VALUE;
@@ -247,7 +229,7 @@ void set_motor_value(uint8_t mmask, int8_t value0, int8_t value1)
 
     	if (value1 != 0)
         {
-        	pulse1 = abs(value1) & 0x3F;	// каждая 1 от пульта = 16 тактов
+        	pulse1 = abs(value1) & 0x3F;	// каждая 1 от пульта = 16 ступеней
         	pulse1 = pulse1 << 4;			// * 16
             if (pulse1 > PWM_MAX_VALUE)
             	pulse1 = PWM_MAX_VALUE;

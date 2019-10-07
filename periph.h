@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-//#include "stm32f1xx_ll_gpio.h"
 #include <libopencm3/stm32/gpio.h>
 
 // выключение питания по падающему фронту
@@ -31,19 +30,20 @@
 #define SERVO_180GRAD		(36 - 1)
 
 // внешние светодиоды
-#define LED0_PIN        	GPIO13
+#define LED0_PIN        	GPIO13	// на плате запаян PB3
 #define LED0_PORT       	GPIOC
 #define LED1_PIN        	GPIO4
 #define LED1_PORT       	GPIOB
 #define LED2_PIN        	GPIO14
 #define LED2_PORT       	GPIOB
-#define LED3_PIN        	GPIO11
+#define LED3_PIN        	GPIO15
 #define LED3_PORT       	GPIOA
 
 //#define BOARD_LED_PIN   	GPIO13
 //#define BOARD_LED_PORT  	GPIOC
 
 #define STEPP_PORT			GPIOB
+
 #define STEP1_PIN1      	GPIO10
 #define STEP1_PIN2      	GPIO11
 #define STEP1_PIN3      	GPIO12
@@ -62,7 +62,6 @@
 #define MOTOR2_PIN2			GPIO1
 #define MOTOR2_PORT			GPIOB
 
-//#define serTX_QUEUE_LEN		( 32 )	// длина очереди передачи в UART
 #define serRX_QUEUE_LEN		( 32 )	// длина очереди приема из UART
 #define cmd_QUEUE_LEN		( 10 )	// длина очереди команд
 #define state_QUEUE_LEN		( 10 )	// длина очереди команд
@@ -72,13 +71,9 @@
 #define CHAN_P5				ADC_CHANNEL_3	// сенсоры на разъеме P5
 #define CHAN_6V				ADC_CHANNEL_4	// напряжение на ключе 6V
 
-//#define IN_PACK_SIZE		16		// размер принимаемого пакета
-//#define PACK_SIZE			65		// размер отправляемого пакета
-//#define SPACK_SIZE			",65\r\n"
-//#define ESP_PACK_SIZE		256
 #define BLE_PACK_SIZE		20
 #define BLE_SEND_DELAY		10		// мин. интервал между передачами пакетов, mS
-//#define JSON_MAX_TOKENS		16
+//#define JFES_MAX_TOKENS_COUNT		16	-- определено в jfes.h
 
 // биты для xEventGroupBLE - события, связанные с BLE
 #define ble_RECIEVED_JSON		(1UL << 0UL)
@@ -101,15 +96,18 @@
 #define BATT_LOW_LEVEL		1720	// порог предупреждения о разряде батареи - 11.1V
 #define BATT_OFF_LEVEL		1580	// порог аварийного отключения по разряду батареи 10.2V
 
-#define SENS_LEVEL_4	2000
-#define SENS_LEVEL_5	2171
+#define SENS_LEVEL_4		2000
+#define SENS_LEVEL_5		2171
 
-#define SENS_LEVEL_8	2700
-#define SENS_LEVEL_9	2986
+#define SENS_LEVEL_8		2700
+#define SENS_LEVEL_9		2986
 
-#define AXLE_CORR		80
+// корректировка положения оси - пока не используется
+#define AXLE_CORR			80
+
 // порог обнаружения нагрузки
 #define LOAD_DETECT		30
+
 // значение motors_delta, при котором определяется недопустимая нагрузка
 #define LOAD_MAX		1000	// ???????????????????
 // максимальное отклонение от оси
@@ -118,6 +116,7 @@
 #define STEPPER_TURNS_DIV	9		// степень двойки в 512
 #define STEPPER_TURN_MASK	0x1FF	// остаток от делния на 512
 #define AXLE_STEPPER		0		// ШД эхо-локатора
+
 // для управления ДПТ значение в команде может быть от 0 до +/- MOTOR_MAX_VALUE
 // в таймере значение умножается на 16 (0..PWM_MAX_VALUE-1)
 #define MOTOR_MAX_VALUE	32
@@ -141,7 +140,7 @@
 #define STEPP1_QUEUE		0x02
 #define STEPP0_QUEUE		0x01
 
-#define MOTOR_START_TIME	50	// время на трогание мотора
+#define MOTOR_START_TIME	50	// время на трогание мотора, mS
 #define MOTOR_GEAR0			0
 #define MOTOR_GEAR1			16
 #define MOTOR_GEAR2			24
@@ -192,15 +191,6 @@ enum {
 	CNT_ON_STEPS	// включен, интервалы в шагах счетчика
 };
 
-/*
-typedef struct _commands_counter {
-	uint8_t mot_cnt;
-	uint8_t step_cnt[2];
-	uint8_t esensor_cnt;
-	uint8_t servo_cnt;
-	uint8_t common_cnt;
-} commands_counter;
-*/
 // команды очереди ДПТ
 enum {
 	MOT_STOP = 0,
@@ -305,7 +295,6 @@ typedef struct _echo_sensor {
 } echo_sensor;
 
 enum {
-        //STEP_AUTO = 0,
         STEP_MAN = 0,
         STEP_MAN_CONT,
         STEP_OFF
