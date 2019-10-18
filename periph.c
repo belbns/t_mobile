@@ -11,12 +11,13 @@
 #include <libopencm3/stm32/timer.h>
 
 #include "periph.h"
-
+/*
 #include "FreeRTOS.h"
 #include "task.h"
-#include "semphr.h"
+#include "queue.h"
 #include "event_groups.h"
-
+#include "semphr.h"
+*/
 /* длительность полупериода мигания светодиодов (в mS)
  * полупериод показывает состояние устройства:
  * 1000 mS - устройство готово к приему команд
@@ -26,29 +27,30 @@
 
 void oneStep(uint8_t pos, uint8_t stpr);
 
-extern SemaphoreHandle_t xSteppMutex[2];
+//extern SemaphoreHandle_t xSteppMutex[2];
 extern EventGroupHandle_t xEventGroupADC;
-
+extern EventGroupHandle_t xEventGroupDev;
+extern SemaphoreHandle_t xSteppMutex[2]; 
 
 motor_ctrl motors = {
     .state = MOTOR_OFF, .gear = GEAR_0, .value1 = 0, .value2 = 0,
-	.pre_value = 0, .need_update1 = 0, .need_update2 = 0, .checked = false
+	.pre_value = 0, .need_update1 = 0, .need_update2 = 0   //, .checked = false
 };
 
 stepper stepp[2] = {
-    { STEP_OFF, 0, 0, 0, 0, 0, 0, false },
-	{ STEP_OFF, 0, 0, 0, 0, 0, 0, false }
+    { STEP_OFF, 0, 0, 0, 0, 0, 0/*, false*/ },
+	{ STEP_OFF, 0, 0, 0, 0, 0, 0/*, false*/ }
 };
 
 
 mob_leds leds[4] = {
-    { .port = LED0_PORT, .pin = LED0_PIN, .on = 0, .mode = LED_OFF, .checked = false},
-	{ .port = LED1_PORT, .pin = LED1_PIN, .on = 0, .mode = LED_OFF, .checked = false},
-	{ .port = LED2_PORT, .pin = LED2_PIN, .on = 0, .mode = LED_OFF, .checked = false},
-	{ .port = LED3_PORT, .pin = LED3_PIN, .on = 0, .mode = LED_OFF, .checked = false},
+    { .port = LED0_PORT, .pin = LED0_PIN, .on = 0, .mode = LED_OFF/*, .checked = false*/},
+	{ .port = LED1_PORT, .pin = LED1_PIN, .on = 0, .mode = LED_OFF/*, .checked = false*/},
+	{ .port = LED2_PORT, .pin = LED2_PIN, .on = 0, .mode = LED_OFF/*, .checked = false*/},
+	{ .port = LED3_PORT, .pin = LED3_PIN, .on = 0, .mode = LED_OFF/*, .checked = false*/},
 };
 
-servo_drive servo = {SERVO_ON, 90, 90, false};
+servo_drive servo = {SERVO_ON, 90, 90/*, false*/};
 
 uint8_t axle_stepper = AXLE_STEPPER;	// номер ШД эхо-локатора
 
@@ -65,6 +67,116 @@ void vApplicationMallocFailedHook( void )
 
 }
 */
+/*
+ * Callback функция системного таймера.
+ * Используется для тактирования шаговых двигателей
+ *
+*/
+void vApplicationTickHook( void )
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    static uint8_t stepp_count = 0;
+
+//xEventGroupSetBits(xEventGroupDev, (const EventBits_t)0x1FFF);
+
+    // тактирование ШД0 - по четным тактам, ШД1 - по нечетным.
+    uint8_t i = stepp_count & 1;
+    EventBits_t evStep = dev_STEPP1_BIT << i;   // если 1 -> dev_STEPP2_BIT
+    // захватываем ШД
+    if ( xSemaphoreTakeFromISR( xSteppMutex[i], &xHigherPriorityTaskWoken )== pdPASS )
+    {
+        stepp_count++;
+
+        if ( stepp[i].last_step )  // отработан последний шаг
+        {
+            if (stepp[i].mode != STEP_MAN_CONT)
+            {
+                stepp_stop(i);
+                stepp[i].moving = 0;
+                //stepp[i].checked = false;
+                xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
+            }
+            else    // непрерывное движение
+            {
+                stepp[i].steps = (uint32_t)(STEPPER_ANGLE_TURN << 3); // 512 * 8
+            }
+            stepp[i].last_step = 0;
+                
+            // приращиваем текущий угол - последние 8 тактов учитываются здесь
+            if ( stepp[i].clockw )
+            {
+                stepp[i].angle_curr++;
+                //stepp[i].checked = false;
+                xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
+            }
+            else
+            {
+                stepp[i].angle_curr--;
+                //stepp[i].checked = false;
+                xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
+            }
+        }
+        else if ( stepp[i].steps > 0 )  // еще есть куда шагать
+        {
+            uint8_t pos = (uint8_t)(stepp[i].steps & 0x07); // младшие 3 бита определяют комбинацию
+
+            // при переходе pos через 0 (отработано 8 тактов) выполняется приращение
+            // текущего угиа ШД. Для исключения исходного нуля stepp[i].moving переводится
+            // в 1 после обработки 1 такта.
+            if ( stepp[i].clockw )
+            {
+                // при переходе через 0 (исключая начальный ноль) - приращение текущего угла
+                if ((pos == 0) && stepp[i].moving)
+                {
+                    stepp[i].angle_curr++;
+                    //stepp[i].checked = false;
+                    xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
+                }
+                pos = 7 - pos;
+            }
+            else
+            {
+                // приращение текущего угла
+                if ((pos == 0) && stepp[i].moving)
+                {
+                    stepp[i].angle_curr--;
+                    //stepp[i].checked = false;
+                    xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
+                }
+            }
+            oneStep(pos, i);
+                        
+            stepp[i].steps--;
+            if ( stepp[i].steps == 0 )
+            {
+                stepp[i].last_step = 1;
+            }
+                        
+            // чтобы не было приращения на начальном нуле
+            // признак движения устанавливаем после обработки 1-го шага
+            stepp[i].moving = 1;
+            //stepp[i].checked = false;
+            xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
+        }
+        // контроль полного оборота
+        if (stepp[i].angle_curr == STEPPER_ANGLE_TURN)
+        {
+            stepp[i].angle_curr = 0;
+            stepp[i].turns++;
+            //stepp[i].checked = false;
+            xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
+        }
+        else if (stepp[i].angle_curr == -STEPPER_ANGLE_TURN)
+        {
+            stepp[i].angle_curr = 0;
+            stepp[i].turns--;
+            //stepp[i].checked = false;
+            xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
+        }
+        xSemaphoreGiveFromISR( xSteppMutex[i], &xHigherPriorityTaskWoken );
+    }
+}
+
 /*
 void vApplicationStackOverflowHook( TaskHandle_t pxTask, char *pcTaskName )
 {
@@ -85,106 +197,6 @@ void vApplicationStackOverflowHook( TaskHandle_t pxTask, char *pcTaskName )
         for( ;; );
 }
 */
-
-/*
- * Callback функция системного таймера.
- * Используется для тактирования шаговых двигателей
- */
-void vApplicationTickHook( void )
-{
-	static uint8_t stepp_count = 0;
-
-	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-	// тактирование ШД0 - по четным тактам, ШД1 - по нечетным.
-	uint8_t i = stepp_count & 1;	
-	// захватываем ШД
-	if ( xSemaphoreTakeFromISR( xSteppMutex[i], &xHigherPriorityTaskWoken ) == pdPASS )
-	{
-		stepp_count++;
-
-        if ( stepp[i].last_step )  // отработан последний шаг
-        {
-        	if (stepp[i].mode != STEP_MAN_CONT)
-        	{
-        		stepp_stop(i);
-        		stepp[i].moving = 0;
-        		stepp[i].checked = false;
-        	}
-        	else	// непрерывное движение
-        	{
-        		stepp[i].steps = (uint32_t)(STEPPER_ANGLE_TURN << 3);	// 512 * 8
-        	}
-            stepp[i].last_step = 0;
-
-            // приращиваем текущий угол - последние 8 тактов учитываются здесь
-            if ( stepp[i].clockw )
-            {
-            	stepp[i].angle_curr++;
-        		stepp[i].checked = false;
-            }
-            else
-            {
-            	stepp[i].angle_curr--;
-        		stepp[i].checked = false;
-            }
-        }
-        else if ( stepp[i].steps > 0 )	// еще есть куда шагать
-		{
-			uint8_t pos = (uint8_t)(stepp[i].steps & 0x07);	// младшие 3 бита определяют комбинацию
-
-			// при переходе pos через 0 (отработано 8 тактов) выполняется приращение
-			// текущего угла ШД. Для исключения исходного нуля stepp[i].moving переводится
-			// в 1 после обработки 1 такта.
-			if ( stepp[i].clockw )
-			{
-				// при переходе через 0 (исключая начальный ноль) - приращение текущего угла
-				if ((pos == 0) && stepp[i].moving)
-				{
-					stepp[i].angle_curr++;
-	        		stepp[i].checked = false;
-				}
-				pos = 7 - pos;
-			}
-			else
-			{
-				// приращение текущего угла
-				if ((pos == 0) && stepp[i].moving)
-				{
-					stepp[i].angle_curr--;
-	        		stepp[i].checked = false;
-				}
-			}
-			oneStep(pos, i);
-
-	        stepp[i].steps--;
-	        if ( stepp[i].steps == 0 )
-	        {
-	        	stepp[i].last_step = 1;
-	        }
-
-	        // чтобы не было приращения на начальном нуле
-	        // признак движения устанавливаем после обработки 1-го шага
-	        stepp[i].moving = 1;
-    		stepp[i].checked = false;
-		}
-        // контроль полного оборота
-        if (stepp[i].angle_curr == STEPPER_ANGLE_TURN)
-        {
-        	stepp[i].angle_curr = 0;
-        	stepp[i].turns++;
-    		stepp[i].checked = false;
-        }
-        else if (stepp[i].angle_curr == -STEPPER_ANGLE_TURN)
-        {
-        	stepp[i].angle_curr = 0;
-        	stepp[i].turns--;
-    		stepp[i].checked = false;
-        }
-        xSemaphoreGiveFromISR( xSteppMutex[i], &xHigherPriorityTaskWoken );
-	}
-}
-
 
 /*
     Установка режима ДПТ, таймер TIM3 в режиме PWM1 управляет моторами через L293D.
@@ -284,7 +296,8 @@ void set_motor_value(uint8_t mmask, int8_t value0, int8_t value1)
         motors.need_update2 = 0;
     }
 
-    motors.checked = false;
+    //motors.checked = false;
+    xEventGroupSetBits(xEventGroupDev, dev_MOTORS_BIT);
 
 }
 
@@ -296,7 +309,8 @@ void set_servo_angle(uint8_t angle)
 		servo.angle = angle;
         //TIM2_CCR3 = (uint16_t)(angle + SERVO_0GRAD);
         timer_set_oc_value(TIM2, TIM_OC3, (uint16_t)(angle + SERVO_0GRAD));
-		servo.checked = false;
+		//servo.checked = false;
+        xEventGroupSetBits(xEventGroupDev, dev_SERVO_BIT);        
 	}
 }
 
@@ -306,7 +320,8 @@ void servo_stop(void)
 	servo.angle = SERVO_90GRAD;
     //TIM2_CCR3 = 0; ???
     timer_set_oc_value(TIM2, TIM_OC3, (uint16_t)servo.angle);
-	servo.checked = false;
+	//servo.checked = false;
+    xEventGroupSetBits(xEventGroupDev, dev_SERVO_BIT);        
 }
 
 
@@ -371,6 +386,7 @@ void oneStep(uint8_t pos, uint8_t stpr) {
 
 void stepp_stop(uint8_t stnum)
 {
+    EventBits_t evStep = dev_STEPP1_BIT << stnum;   // если 1 -> dev_STEPP2_BIT
 	if ( stnum < 2 )
 	{
 		gpio_clear(STEPP_PORT, step_pins[stnum][0]);	// MS0_PIN
@@ -380,14 +396,15 @@ void stepp_stop(uint8_t stnum)
 
         stepp[stnum].last_step = 0;
         stepp[stnum].steps = 0;
-        stepp[stnum].checked = false;
+        //stepp[stnum].checked = false;
+        xEventGroupSetBits(xEventGroupDev, evStep); 
 	}
 }
 
 // процедура должна вызываться при захваченом xSteppMutex[stnum]
 void stepp_up_down(uint8_t stnum, int16_t sparam)
 {
-	//trace_printf("angle_curr= %d\n", stepp[0].angle_curr);
+    EventBits_t evStep = dev_STEPP1_BIT << stnum;   // если 1 -> dev_STEPP2_BIT
 
 	// ждем окончания движения
 	while ( (stepp[stnum].steps > 0) || stepp[stnum].last_step )
@@ -407,13 +424,15 @@ void stepp_up_down(uint8_t stnum, int16_t sparam)
 	}
 	stepp[stnum].steps = steps << 3;	// *8
 
-	stepp[stnum].checked = false;
-	//trace_printf("new_steps= %d\n", steps);
+	//stepp[stnum].checked = false;
+    xEventGroupSetBits(xEventGroupDev, evStep);        
 }
 
 // возврат ШД в нулевое положение
 void stepp_to_null(uint8_t stnum, uint8_t fast)
 {
+    EventBits_t evStep = dev_STEPP1_BIT << stnum;   // если 1 -> dev_STEPP2_BIT
+
 	if ( xSemaphoreTake( xSteppMutex[stnum], pdMS_TO_TICKS(100)))
 	{
 		stepp[stnum].mode = STEP_MAN;
@@ -448,13 +467,15 @@ void stepp_to_null(uint8_t stnum, uint8_t fast)
 			stepp[stnum].steps = ((uint32_t)abs(steps)) << 3;
 			xSemaphoreGive( xSteppMutex[stnum] );
 		}
-		stepp[stnum].checked = false;
+		//stepp[stnum].checked = false;
+        xEventGroupSetBits(xEventGroupDev, evStep);        
 	}
 }
 
 void set_led(uint8_t num, uint8_t value)
 {
 	uint8_t n = num & 0x03;
+    EventBits_t evLed = dev_LED0_BIT << n;   // LED0..LED3
 
 	switch (value)
 	{
@@ -477,7 +498,8 @@ void set_led(uint8_t num, uint8_t value)
 	    		leds[n].on = 0;
 	            gpio_clear(leds[n].port, leds[n].pin);
 	}
-	leds[n].checked = false;
+	//leds[n].checked = false;
+    xEventGroupSetBits(xEventGroupDev, evLed);        
 }
 
 void stop_all(void)

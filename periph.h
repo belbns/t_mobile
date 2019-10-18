@@ -6,6 +6,14 @@
 
 #include <libopencm3/stm32/gpio.h>
 
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "event_groups.h"
+#include "semphr.h"
+#include "timers.h"
+
+
 // выключение питания по падающему фронту
 #define POWEROFF_PORT	    GPIOA
 #define POWEROFF_PIN	    GPIO12	// вход/прерывание
@@ -64,7 +72,7 @@
 
 #define serRX_QUEUE_LEN		( 32 )	// длина очереди приема из UART
 #define cmd_QUEUE_LEN		( 10 )	// длина очереди команд
-#define state_QUEUE_LEN		( 10 )	// длина очереди команд
+#define state_QUEUE_LEN		( 20 )	// длина очереди команд
 
 #define CHAN_P6				ADC_CHANNEL_1	// сенсоры на разъеме P6
 #define CHAN_3V3		    ADC_CHANNEL_0	// напряжение на ключе 3.3V
@@ -91,6 +99,21 @@
 #define alarm_HALL3_BIT					(1UL << 8UL)
 #define alarm_HALL4_BIT					(1UL << 9UL)
 #define alarm_POWER_COMMAND_BIT			(1UL << 10UL)
+
+// биты для xEventGroupDev - необходимость передачи статуса устройств
+#define dev_MOTORS_BIT			(1UL << 0UL)
+#define dev_STEPP1_BIT			(1UL << 1UL)
+#define dev_STEPP2_BIT			(1UL << 2UL)
+#define dev_SERVO_BIT			(1UL << 3UL)
+#define dev_DIST_BIT			(1UL << 4UL)
+#define dev_ADC0_BIT			(1UL << 5UL)
+#define dev_ADC1_BIT			(1UL << 6UL)
+#define dev_ADC2_BIT			(1UL << 7UL)
+#define dev_ADC3_BIT			(1UL << 8UL)
+#define dev_LED0_BIT			(1UL << 9UL)
+#define dev_LED1_BIT			(1UL << 10UL)
+#define dev_LED2_BIT			(1UL << 11UL)
+#define dev_LED3_BIT			(1UL << 12UL)
 
 // АЦП выдает по питанию приблизительно 617 единиц на 1 вольт
 #define BATT_LOW_LEVEL		1720	// порог предупреждения о разряде батареи - 11.1V
@@ -146,8 +169,9 @@
 #define MOTOR_GEAR2			24
 #define MOTOR_GEAR3			32
 
-// кол-во циклов vTaskMain для отключения при потере связи
-#define WAIT_FOR_PACK		500000
+// Максимальное время отутствия пакетов от пульта в mS 
+// - при достижениии формируется STOP_ALL
+#define WAIT_FOR_PACK		300000	// 5 min
 
 #define MIN_STEPS_PER_SEC	1	// кол-во импульсов в секунду датчика движения
 								//  при самом медленном вращении колеса
@@ -175,7 +199,8 @@ enum {
 	STATE_PACK_QUEUE_ST2,
 	STATE_PACK_QUEUE_SERVO,
 	STATE_PACK_QUEUE_DIST,
-	STATE_PACK_QUEUE_LEDS
+	STATE_PACK_QUEUE_LEDS,
+	STATE_PACK_DBG
 };
 
 enum {
@@ -278,7 +303,7 @@ typedef struct _motor_ctrl {
         int8_t pre_value;
         uint8_t need_update1;
         uint8_t need_update2;
-        bool checked;
+        //bool checked;
 } motor_ctrl;
 
 enum {
@@ -291,7 +316,7 @@ typedef struct _echo_sensor {
         uint16_t value;			// есть обновленная инфо
         uint8_t state;           // ON-OFF
         uint8_t shot;
-        bool checked;
+        //bool checked;
 } echo_sensor;
 
 enum {
@@ -308,7 +333,7 @@ typedef struct _stepper {
     	uint8_t clockw;			// направление поворота 1 - по часовой стрелке
     	uint8_t last_step;		// выполняется последний шаг
     	uint8_t moving;
-    	bool checked;
+    	//bool checked;
 } stepper;
 
 typedef struct _mob_leds {
@@ -316,10 +341,10 @@ typedef struct _mob_leds {
 	uint16_t pin;
 	uint8_t on;
 	uint8_t mode;
-	bool checked;
+	//bool checked;
 } mob_leds;
 
-
+/*
 typedef struct _voltage {
 	uint16_t motors;			// напряжение на батарее моторов
 	uint16_t delta;				// разность напряжений на входах БП на 3.3 и 6 вольт
@@ -333,12 +358,13 @@ typedef struct _adcvalue {
 	uint16_t value;
 	bool checked;
 } adcvalue;
-
+*/
+/*
 typedef struct _queuestat {
 	uint16_t value;
 	bool checked;
 } queuestat;
-
+*/
 enum {
 	SERVO_OFF = 0,
 	SERVO_ON
@@ -348,7 +374,7 @@ typedef struct _servo_drive {
 	uint8_t stat;
 	uint8_t angle;
 	uint8_t angle_prev;
-	bool checked;
+	//bool checked;
 } servo_drive;
 
 void vApplicationTickHook( void );
