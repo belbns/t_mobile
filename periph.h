@@ -72,7 +72,7 @@
 
 #define serRX_QUEUE_LEN		( 32 )	// длина очереди приема из UART
 #define cmd_QUEUE_LEN		( 10 )	// длина очереди команд
-#define state_QUEUE_LEN		( 20 )	// длина очереди команд
+#define state_QUEUE_LEN		( 40 )	// длина очереди команд
 
 #define CHAN_P6				ADC_CHANNEL_1	// сенсоры на разъеме P6
 #define CHAN_3V3		    ADC_CHANNEL_0	// напряжение на ключе 3.3V

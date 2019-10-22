@@ -233,11 +233,9 @@ int main( void )
 
 
 
-	//gpio_toggle(GPIOB, GPIO9);	/* LED on/off */
 	/* Start the blink task. */
 	xTaskCreate( prvBlinkTask, "Flash", configMINIMAL_STACK_SIZE, NULL, mainBLINK_TASK_PRIORITY, NULL );
-	//gpio_toggle(GPIOB, GPIO10);	/* LED on/off */
-
+	
 	/* Start the usart task. */
 	//xTaskCreate( prvUsartTask, "USART", configMINIMAL_STACK_SIZE, NULL, mainBLINK_TASK_PRIORITY, NULL );
 
@@ -278,25 +276,26 @@ static void prvBlinkTask( void *pvParameters )
 	portTickType pt1 = pt0;
 	//portTickType xLastExecutionTime;
 
-	/* Initialise the xLastExecutionTime variable on task entry. */
+	// Initialise the xLastExecutionTime variable on task entry. 
 	//xLastExecutionTime = xTaskGetTickCount();
 
     for( ;; )
 	{
-		/* Simply toggle the LED periodically.  This just provides some timing
-		verification. */
+		// Simply toggle the LED periodically.  This just provides some timing
+		//verification./
 
 		//vTaskDelayUntil( &xLastExecutionTime, mainBLINK_DELAY );
 		pt1 = xTaskGetTickCount();
 		if ((pt1 - pt0) > mainBLINK_DELAY)
 		{
-			//gpio_toggle(GPIOB, GPIO8);	/* LED on/off */
-			gpio_toggle(GPIOC, GPIO13);	/* LED on/off */
+			//gpio_toggle(GPIOB, GPIO8);	// LED on/off
+			gpio_toggle(GPIOC, GPIO13);	// LED on/off
 			pt0 = pt1;
 		}
 		taskYIELD();
 	}
 }
+
 /*-----------------------------------------------------------*/
 /*
 static void prvUsartTask( void *pvParameters )
@@ -421,11 +420,13 @@ static void prvMainTask(void *pvParameters)
 		if ( uxBits & alarm_OVERLOAD_BIT)
         {   
         	// Слишком большой ток - очищаем очереди и выключаем моторы
+            /*
 			xQueueReset(xCmdMotQueue);
             xQueueReset(xCmdSt1Queue);
             xQueueReset(xCmdSt2Queue);
             xQueueReset(xCmdServoQueue);
             stop_all();
+            */
             push_state(STATE_PACK_OVERLOAD, 0);
 		}
 
@@ -1332,7 +1333,11 @@ uint8_t sendPackToBLE(char * blepack)
 	}
 }
 
-#define IF_STQ_AVAILABLE()	if(uxQueueSpacesAvailable(xStateQueue) == 0) return;
+
+#define IF_STQ_AVAIL(v)     { \
+                                if(uxQueueSpacesAvailable(xStateQueue) < v) \
+                                    return; \
+                            }
 void check_states(void)
 {
 	/*
@@ -1341,7 +1346,7 @@ void check_states(void)
 		return;
 	}
 	*/
-	IF_STQ_AVAILABLE();
+    IF_STQ_AVAIL(1);
 	// проверка изменения очередей, отправка количества ожидающих
 	//  исполнения команд в очередях при их изменении
     uint16_t tmp = uxQueueMessagesWaiting(xCmdQueue);
@@ -1356,7 +1361,7 @@ void check_states(void)
 			return;
 		}
 	}
-	IF_STQ_AVAILABLE();
+    IF_STQ_AVAIL(1);
 	tmp = uxQueueMessagesWaiting(xCmdMotQueue);
     if (tmp != lenCmdMotQueue)
     {
@@ -1369,7 +1374,7 @@ void check_states(void)
 			return;
 		}
 	}
-	IF_STQ_AVAILABLE();
+    IF_STQ_AVAIL(1);
 	tmp = uxQueueMessagesWaiting(xCmdSt1Queue);
 	if (tmp != lenCmdSt1Queue)
 	{
@@ -1382,7 +1387,7 @@ void check_states(void)
 			return;
 		}
 	}
-	IF_STQ_AVAILABLE();
+    IF_STQ_AVAIL(1);
 	tmp = uxQueueMessagesWaiting(xCmdSt2Queue);
     if (tmp != lenCmdSt2Queue)
     {
@@ -1395,7 +1400,7 @@ void check_states(void)
 			return;
 		}
 	}
-	IF_STQ_AVAILABLE();
+    IF_STQ_AVAIL(1);
 	tmp = uxQueueMessagesWaiting(xCmdServoQueue);
     if (tmp != lenCmdServoQueue)
     {
@@ -1408,6 +1413,7 @@ void check_states(void)
 			return;
 		}
 	}
+    IF_STQ_AVAIL(1);
 	tmp = uxQueueMessagesWaiting(xCmdDistQueue);
     if (tmp != lenCmdDistQueue)
     {
@@ -1420,6 +1426,7 @@ void check_states(void)
 			return;
 		}
 	}
+    IF_STQ_AVAIL(1);
 	tmp = uxQueueMessagesWaiting(xCmdLedsQueue);
 	if (tmp != lenCmdLedsQueue)
 	{
@@ -1432,7 +1439,9 @@ void check_states(void)
 			return;
 		}
 	}
-                 
+
+    IF_STQ_AVAIL(1);
+
    	// проверка изменения состояния устройств, 
    	//  при наличии изменений - отправка их состояния
 	EventBits_t uxBits = xEventGroupWaitBits(
@@ -1451,6 +1460,7 @@ void check_states(void)
 
     if ( uxBits & dev_STEPP1_BIT)
 	{
+        IF_STQ_AVAIL(2);
 		if (push_state(STATE_PACK_STEPP, 0))
 		{
     		xEventGroupClearBits(xEventGroupDev, dev_STEPP1_BIT);
@@ -1458,6 +1468,7 @@ void check_states(void)
 	}
     if ( uxBits & dev_STEPP2_BIT)
 	{
+        IF_STQ_AVAIL(2);
 		if (push_state(STATE_PACK_STEPP, 1))
 		{
     		xEventGroupClearBits(xEventGroupDev, dev_STEPP2_BIT);
@@ -1469,6 +1480,7 @@ void check_states(void)
 	{
     	if ( uxBits & evTmp )
 		{
+            IF_STQ_AVAIL(1);
 			if (push_state(STATE_PACK_LED, i))
 			{
 				xEventGroupClearBits(xEventGroupDev, evTmp);
@@ -1478,6 +1490,7 @@ void check_states(void)
 	}
 	if ( uxBits & dev_SERVO_BIT)
 	{
+        IF_STQ_AVAIL(1);
 		if (push_state(STATE_PACK_SERVO, 0))
 		{
     		xEventGroupClearBits(xEventGroupDev, dev_SERVO_BIT);
@@ -1485,6 +1498,7 @@ void check_states(void)
 	}
 	if ( uxBits & dev_DIST_BIT )
 	{
+        IF_STQ_AVAIL(1);
 		if (push_state(STATE_PACK_DIST, 0))
 		{
     		xEventGroupClearBits(xEventGroupDev, dev_DIST_BIT);
@@ -1500,6 +1514,7 @@ void check_states(void)
 	{
     	if ( uxBits & evTmp )
 		{
+            IF_STQ_AVAIL(1);
 			if (push_state(STATE_PACK_ADC, i))
 			{
     	    	xEventGroupClearBits(xEventGroupDev, evTmp);
@@ -1513,12 +1528,13 @@ void check_states(void)
 bool push_state(uint8_t mstate, uint8_t num)
 {
 	static char pack[20];
-
+    /*
     lenStateQueue = state_QUEUE_LEN - uxQueueSpacesAvailable(xStateQueue);
     if (lenStateQueue >= (state_QUEUE_LEN - 1))
     {
     	return false;    	
     }
+    */
     /*
     if ( uxQueueSpacesAvailable(xStateQueue) == 0 )
     {
@@ -1770,7 +1786,10 @@ bool push_state(uint8_t mstate, uint8_t num)
     if (ret)
     {       
     	strcat(pack, js_end);
-        xQueueSend(xStateQueue, pack, pdMS_TO_TICKS(50));
+        if (xQueueSend(xStateQueue, pack, 0) != pdPASS)
+        {
+            ret = false;
+        }
 	}
     return ret;
 }
