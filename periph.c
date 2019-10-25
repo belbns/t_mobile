@@ -263,14 +263,14 @@ void set_motor_value(uint8_t mmask, int8_t value0, int8_t value1)
         if (value0 > 0)
         {
         	// ждем 0 на TIM3->CCR2
-            while (gpio_get(MOTOR1_PORT, MOTOR1_PIN2)) ;
+            while (gpio_get(MOTOR1_PORT, MOTOR1_PIN2) != 0) ;
             //TIM3_CCR1 = pulse0;
             timer_set_oc_value(TIM3, TIM_OC1, pulse0);
         }
         else if (value0 < 0)
         {
         	// ждем 0 на TIM3->CCR1
-            while (gpio_get(MOTOR1_PORT, MOTOR1_PIN1)) ;
+            while (gpio_get(MOTOR1_PORT, MOTOR1_PIN1) != ) ;
             //TIM3_CCR2 = pulse0;
             timer_set_oc_value(TIM3, TIM_OC2, pulse0);
         }
@@ -282,14 +282,14 @@ void set_motor_value(uint8_t mmask, int8_t value0, int8_t value1)
         if (value1 > 0)
         {
         	// ждем 0 на TIM3->CCR3
-            while (gpio_get(MOTOR2_PORT, MOTOR2_PIN2)) ;
+            while (gpio_get(MOTOR2_PORT, MOTOR2_PIN2) != 0) ;
             //TIM3_CCR3 = pulse1;
             timer_set_oc_value(TIM3, TIM_OC3, pulse1);
         }
         else if (value1 < 0)
         {
         	// ждем 0 на TIM3->CCR4
-            while (gpio_get(MOTOR2_PORT, MOTOR2_PIN1)) ;
+            while (gpio_get(MOTOR2_PORT, MOTOR2_PIN1) != 0) ;
             //TIM3_CCR4 = pulse1;
             timer_set_oc_value(TIM3, TIM_OC4, pulse1);
         }
