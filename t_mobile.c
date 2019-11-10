@@ -2068,20 +2068,22 @@ void ADC_calc(void)
 	uint16_t delta;
     //// printf("ADC_calc");
     // 1-е измерение по каждому каналу отбрасываем, 2-е и 3-е усредняются
-    uint16_t v = (ADCbuffer[10] + ADCbuffer[11]) >> 1;
+    uint16_t v = (ADCbuffer[1] + ADCbuffer[2]) >> 1;    // 3v3
     if (abs(adcval[0] - v) > 7)
     {
     	//adcval[0].checked = false;
     	xEventGroupSetBits(xEventGroupDev, dev_ADC0_BIT);
 	}
-    adcval[0] = v;
-    v = (ADCbuffer[1] + ADCbuffer[2]) >> 1;
+    adcval[0] = v;  //3v3
+
+    v = (ADCbuffer[10] + ADCbuffer[11]) >> 1; // 6v
     if (abs(adcval[1] - v) > 7)
     {
     	//adcval[1].checked = false;
     	xEventGroupSetBits(xEventGroupDev, dev_ADC1_BIT);
 	}
-    adcval[1] = v;
+    adcval[1] = v;  // 6v
+
     if (adcval[1] < adcval[0])
     {
     	delta = adcval[1] - adcval[0];
@@ -2090,20 +2092,22 @@ void ADC_calc(void)
     {
     	delta = 0;
 	}
-    v = (ADCbuffer[7] + ADCbuffer[8]) >> 1;
+
+    v = (ADCbuffer[7] + ADCbuffer[8]) >> 1; // P5
     if (abs(adcval[2] - v) > 7)
     {
     	//adcval[2].checked = false;
     	xEventGroupSetBits(xEventGroupDev, dev_ADC2_BIT);
 	}
-    adcval[2] = v;
-    v = (ADCbuffer[4] + ADCbuffer[5]) >> 1;
+    adcval[2] = v;  // P5
+
+    v = (ADCbuffer[4] + ADCbuffer[5]) >> 1; // P6
     if (abs(adcval[2] - v) > 7)
     {
     	//adcval[3].checked = false;
     	xEventGroupSetBits(xEventGroupDev, dev_ADC3_BIT);
 	}
-    adcval[3] = v;
+    adcval[3] = v;  // P6
         
     xEventGroupClearBits(xEventGroupADC, (const EventBits_t)0xFF);
 
@@ -2200,7 +2204,7 @@ static void dma_adc_init(void)
     dma_set_read_from_peripheral(DMA1, DMA_CHANNEL1);
     dma_enable_memory_increment_mode(DMA1, DMA_CHANNEL1);
     dma_disable_peripheral_increment_mode(DMA1, DMA_CHANNEL1);
-    dma_set_peripheral_size(DMA1, DMA_CHANNEL1, DMA_CCR_MSIZE_16BIT);
+    dma_set_peripheral_size(DMA1, DMA_CHANNEL1, DMA_CCR_PSIZE_16BIT);
     dma_set_memory_size(DMA1, DMA_CHANNEL1, DMA_CCR_MSIZE_16BIT);
     dma_set_priority(DMA1, DMA_CHANNEL1, DMA_CCR_PL_MEDIUM);
     dma_enable_channel(DMA1, DMA_CHANNEL1);
@@ -2219,8 +2223,8 @@ static void adc_setup(void)
 
     dma_adc_init();
 
-    rcc_peripheral_reset(&RCC_APB2RSTR, RCC_APB2RSTR_ADC1RST);
-    rcc_peripheral_clear_reset(&RCC_APB2RSTR, RCC_APB2RSTR_ADC1RST);
+    //rcc_peripheral_reset(&RCC_APB2RSTR, RCC_APB2RSTR_ADC1RST);
+    //rcc_peripheral_clear_reset(&RCC_APB2RSTR, RCC_APB2RSTR_ADC1RST);
     rcc_set_adcpre(RCC_CFGR_ADCPRE_PCLK2_DIV6); // 12MHz
     adc_set_dual_mode(ADC_CR1_DUALMOD_IND);
     adc_set_right_aligned(ADC1);

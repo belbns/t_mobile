@@ -75,9 +75,9 @@
 #define state_QUEUE_LEN		( 40 )	// длина очереди команд
 
 #define CHAN_P6				ADC_CHANNEL_1	// сенсоры на разъеме P6
-#define CHAN_3V3		    ADC_CHANNEL_0	// напряжение на ключе 3.3V
+#define CHAN_3V3		    ADC_CHANNEL_0	// напряжение на ключе 3.3V / 4.64 (12.29v -> 3826)
 #define CHAN_P5				ADC_CHANNEL_3	// сенсоры на разъеме P5
-#define CHAN_6V				ADC_CHANNEL_4	// напряжение на ключе 6V
+#define CHAN_6V				ADC_CHANNEL_4	// напряжение на ключе 6V / 4.64
 
 #define BLE_PACK_SIZE		20
 #define BLE_SEND_DELAY		10		// мин. интервал между передачами пакетов, mS
