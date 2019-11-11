@@ -2352,9 +2352,10 @@ static void gpio_setup(void)
 
     // заранее обнуляем A11, A15
     gpio_clear(GPIOA, GPIO11|GPIO15);
-    // заранее ставим высокий уровень на PA8
+    // заранее ставим высокий уровень на PA8 GPIO_CNF_OUTPUT_OPENDRAIN
     gpio_set(POWER_HOLD_PORT, POWER_HOLD_PIN);
-    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO8|GPIO11|GPIO15);
+    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_OPENDRAIN, GPIO8);
+    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO11|GPIO15);
 
     // дублируем
     gpio_set(POWER_HOLD_PORT, POWER_HOLD_PIN);
@@ -2363,6 +2364,8 @@ static void gpio_setup(void)
     gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG, GPIO1);
     gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG, GPIO3);
     gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG, GPIO4);
+
+    gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_FLOAT, GPIO12);
 
     nvic_enable_irq(NVIC_EXTI9_5_IRQ);
     nvic_enable_irq(NVIC_EXTI15_10_IRQ);
