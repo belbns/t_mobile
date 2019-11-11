@@ -78,9 +78,10 @@ static uint16_t lenCmdDistQueue = 1;
 static volatile uint16_t lenStateQueue = 0;
 
 static uint8_t init_process = 0;  // идет инициализация железа
-//static adcvalue adcval[4] = { {0, false}, {0, false}, {0, false}, {0, false} };
 static uint16_t adcval[4] = {0, 0, 0, 0};
+
 static TickType_t leds_delay = pdMS_TO_TICKS(1000);
+static TickType_t board_led_delay = pdMS_TO_TICKS(500);
 
 extern motor_ctrl motors;
 extern mob_leds leds[];
@@ -118,7 +119,6 @@ void procSteppCmd(uint8_t stnum, ncommand_item cmd);
 TickType_t echo_one_shot(void);
 void calc_dist(uint16_t count);
 void echo_pulse(void);
-//uint8_t sendPackToBLE(const char * blepack);
 uint8_t sendPackToBLE(char * blepack);
 void check_states(void);
 bool push_state(uint8_t mstate, uint8_t num);
@@ -133,7 +133,8 @@ void put_leds_cmd(char command, int16_t iparam);
 #define mainBLINK_TASK_PRIORITY		( tskIDLE_PRIORITY + 1 )
 
 /* The rate at which the blink task toggles the LED. */
-#define mainBLINK_DELAY			( ( portTickType ) 400 / portTICK_RATE_MS )
+//#define mainBLINK_DELAY			( ( portTickType ) 400 / portTICK_RATE_MS )
+//#define mainBLINK_DELAY         400
 
 /* The number of nano seconds between each processor clock. */
 #define mainNS_PER_CLOCK ( ( unsigned portLONG ) ( ( 1.0 / ( double ) configCPU_CLOCK_HZ ) * 1000000000.0 ) )
@@ -286,7 +287,7 @@ static void prvBlinkTask( void *pvParameters )
 
 		//vTaskDelayUntil( &xLastExecutionTime, mainBLINK_DELAY );
 		pt1 = xTaskGetTickCount();
-		if ((pt1 - pt0) > mainBLINK_DELAY)
+		if ((pt1 - pt0) > board_led_delay)    // mainBLINK_DELAY
 		{
 			//gpio_toggle(GPIOB, GPIO8);	// LED on/off
 			gpio_toggle(GPIOC, GPIO13);	// LED on/off
@@ -328,6 +329,7 @@ static void prvMainTask(void *pvParameters)
     jfes_array_t *jarr;
     jfes_value_t *newvalue;
     
+    board_led_delay = 250;  // init process
     // init jfes
     config.jfes_malloc = (jfes_malloc_t)pvPortMalloc;
     config.jfes_free = vPortFree;
@@ -343,7 +345,7 @@ static void prvMainTask(void *pvParameters)
     esensor.state = ECHO_ONE;
     stepp[0].mode = stepp[1].mode = STEP_MAN;
     set_servo_angle(90);
-    // printf("tM3\n");
+
     vTaskDelay(pdMS_TO_TICKS(500));
 
     //sendPackToBLE("tM4\n");
@@ -358,6 +360,8 @@ static void prvMainTask(void *pvParameters)
     // Включаем 6V
     gpio_set(POWER_HOLD_PORT, POWER_6V_PIN);
     init_process = 0;
+
+    board_led_delay = 1000;  // normal process
 
     //service_blink_on(pdMS_TO_TICKS(1000));
     //service_blink_off();
@@ -379,34 +383,32 @@ static void prvMainTask(void *pvParameters)
         uxBits = xEventGroupWaitBits(
         	xEventGroupADC,
             alarm_POWER_BUTTON_BIT ||
-            alarm_MOTORS_OFF_VOLTAGE_BIT  ||
             alarm_CONTRL_OFF_VOLTAGE_BIT ||
             alarm_POWER_COMMAND_BIT,
             pdTRUE,             // очищаем флаг
             pdFALSE,    //       Don't wait for all bits.
             0 );                // ticks to wait
 
-        if ( uxBits & alarm_POWER_BUTTON_BIT) // нажатие кнопки питания
+        if ( (uxBits & alarm_POWER_BUTTON_BIT) != 0 )       // нажатие кнопки питания
 		{   
         	push_state(STATE_PACK_PWROFF_KEY, 0);
-            //flag_power_off = 1;
+            flag_power_off = 1;
             vTaskDelay(pdMS_TO_TICKS(100));
-            //power_off();
+            power_off();
 		}
-        else if (uxBits & alarm_POWER_COMMAND_BIT) // команда выключения
+        else if ( (uxBits & alarm_POWER_COMMAND_BIT) != 0 ) // команда выключения
         {
         	push_state(STATE_PACK_PWROFF_CMD, 0);
-            //flag_power_off = 1;
+            flag_power_off = 1;
             vTaskDelay(pdMS_TO_TICKS(100));
-            //power_off();
+            power_off();
 		}
-        else if (uxBits & (alarm_MOTORS_OFF_VOLTAGE_BIT ||
-        		alarm_CONTRL_OFF_VOLTAGE_BIT)) // разряд батареи
+        else if ( (uxBits & alarm_CONTRL_OFF_VOLTAGE_BIT) != 0 )    // разряд батареи
 		{
         	push_state(STATE_PACK_PWROFF_BAT, 0);
-            //flag_power_off = 1;
+            flag_power_off = 1;
             vTaskDelay(pdMS_TO_TICKS(100));
-			//power_off();
+			power_off();
 		}
                         
         // проверка на недопустимый ток нагрузки
@@ -417,16 +419,14 @@ static void prvMainTask(void *pvParameters)
             pdFALSE,    //       Don't wait for all bits.
             0 );                // ticks to wait
 		
-		if ( uxBits & alarm_OVERLOAD_BIT)
+		if ( (uxBits & alarm_OVERLOAD_BIT) != 0 )
         {   
         	// Слишком большой ток - очищаем очереди и выключаем моторы
-            /*
 			xQueueReset(xCmdMotQueue);
             xQueueReset(xCmdSt1Queue);
             xQueueReset(xCmdSt2Queue);
             xQueueReset(xCmdServoQueue);
             stop_all();
-            */
             push_state(STATE_PACK_OVERLOAD, 0);
 		}
 
@@ -437,7 +437,7 @@ static void prvMainTask(void *pvParameters)
             pdFALSE,    // Don't wait for all bits.
             0 );                // ticks to wait
 
-		if (uxBits & ble_RECIEVED_JSON)
+		if ( (uxBits & ble_RECIEVED_JSON) != 0 )
         {
         	// пришел пакет от ДУ, обрабатываем cReceivedPack[]
 			st[0] = '\0';
@@ -454,7 +454,7 @@ static void prvMainTask(void *pvParameters)
 					parsed = true;
 				}
 				// POWER_OFF
-                if (! parsed)
+                if (!parsed)
                 {
                 	newvalue = jfes_get_child(&value, jsp_pwroff, 0);
 					if (newvalue)
@@ -474,7 +474,7 @@ static void prvMainTask(void *pvParameters)
                     }
 				}
                 // STOP_ALL
-                if (! parsed)
+                if (!parsed)
                 {
                 	newvalue = jfes_get_child(&value, jsp_stop, 0);
                     if (newvalue)
@@ -501,7 +501,7 @@ static void prvMainTask(void *pvParameters)
 				MOT_LEFT,
                 MOT_STRAIGHT
                 */
-                if (! parsed)
+                if (!parsed)
                 {
                 	newvalue = jfes_get_child(&value, jsp_mot, 0);
                     if (newvalue)
@@ -542,7 +542,7 @@ static void prvMainTask(void *pvParameters)
                 ST_CONT_STOP,
                 ST_RET,
                 */
-                if (! parsed)
+                if (!parsed)
                 {
                 	newvalue = jfes_get_child(&value, jsp_st, 0);
 					if (newvalue)
@@ -579,7 +579,7 @@ static void prvMainTask(void *pvParameters)
 					}
 				}
                 // LEDS_MOD
-                if (! parsed)
+                if (!parsed)
                 {
                 	newvalue = jfes_get_child(&value, jsp_led, 0);
                     if (newvalue)
@@ -610,7 +610,7 @@ static void prvMainTask(void *pvParameters)
 				}
                 // SERVO_SET
                 // SERVO_PAUSE
-                if (! parsed)
+                if (!parsed)
                 {
                 	newvalue = jfes_get_child(&value, jsp_servo, 0);
 					if (newvalue)
@@ -641,7 +641,7 @@ static void prvMainTask(void *pvParameters)
 				}
                 // DIST_SHOT
                 // DIST_PAUSE
-                if (! parsed)
+                if (!parsed)
                 {
                 	newvalue = jfes_get_child(&value, jsp_echo, 0);
 					if (newvalue)
@@ -676,7 +676,7 @@ static void prvMainTask(void *pvParameters)
                 CNT_SET_ON_STEPS,
                 CNT_RESET
                 */
-				if (! parsed)
+				if (!parsed)
                 {
                 	newvalue = jfes_get_child(&value, jsp_dist, 0);
                     if (newvalue)
@@ -819,12 +819,12 @@ static void prvADCTask(void *pvParameters)
             if ( (adcval[2] >= SENS_LEVEL_4) &&
             	(adcval[2] < SENS_LEVEL_5) )//P5
 			{
-            	xEventGroupSetBits( xEventGroupADC,     alarm_HALL1_BIT);
+            	xEventGroupSetBits(xEventGroupADC, alarm_HALL1_BIT);
 			}
 			else if ( (adcval[2] >= SENS_LEVEL_8) &&
             	(adcval[2] < SENS_LEVEL_9) )
 			{
-            	xEventGroupSetBits( xEventGroupADC,     alarm_HALL2_BIT);
+            	xEventGroupSetBits(xEventGroupADC, alarm_HALL2_BIT);
 			}
 
 			// запускаем следующий цикл измерений
@@ -1340,12 +1340,6 @@ uint8_t sendPackToBLE(char * blepack)
                             }
 void check_states(void)
 {
-	/*
-	if (uxQueueSpacesAvailable(xStateQueue) == 0)
-	{
-		return;
-	}
-	*/
     IF_STQ_AVAIL(1);
 	// проверка изменения очередей, отправка количества ожидающих
 	//  исполнения команд в очередях при их изменении
@@ -1450,7 +1444,7 @@ void check_states(void)
         pdFALSE,    			// Don't wait for all bits.
         0 );                	// ticks to wait
 
-    if ( uxBits & dev_MOTORS_BIT)
+    if ( (uxBits & dev_MOTORS_BIT) != 0 )
     {
     	if (push_state(STATE_PACK_MOTORS, 0))
     	{
@@ -1458,7 +1452,7 @@ void check_states(void)
 		}
 	}
 
-    if ( uxBits & dev_STEPP1_BIT)
+    if ( (uxBits & dev_STEPP1_BIT) != 0 )
 	{
         IF_STQ_AVAIL(2);
 		if (push_state(STATE_PACK_STEPP, 0))
@@ -1466,7 +1460,7 @@ void check_states(void)
     		xEventGroupClearBits(xEventGroupDev, dev_STEPP1_BIT);
 		}
 	}
-    if ( uxBits & dev_STEPP2_BIT)
+    if ( (uxBits & dev_STEPP2_BIT) != 0 )
 	{
         IF_STQ_AVAIL(2);
 		if (push_state(STATE_PACK_STEPP, 1))
@@ -1478,7 +1472,7 @@ void check_states(void)
 	EventBits_t evTmp = dev_LED0_BIT;
 	for (int8_t i = 0; i < 4; i++)
 	{
-    	if ( uxBits & evTmp )
+    	if ( (uxBits & evTmp) != 0 )
 		{
             IF_STQ_AVAIL(1);
 			if (push_state(STATE_PACK_LED, i))
@@ -1488,7 +1482,7 @@ void check_states(void)
 			evTmp = evTmp << 1; // dev_LED1_BIT .. dev_LED3_BIT
 		}
 	}
-	if ( uxBits & dev_SERVO_BIT)
+	if ( (uxBits & dev_SERVO_BIT) != 0 )
 	{
         IF_STQ_AVAIL(1);
 		if (push_state(STATE_PACK_SERVO, 0))
@@ -1496,7 +1490,7 @@ void check_states(void)
     		xEventGroupClearBits(xEventGroupDev, dev_SERVO_BIT);
 		}
 	}
-	if ( uxBits & dev_DIST_BIT )
+	if ( (uxBits & dev_DIST_BIT) != 0 )
 	{
         IF_STQ_AVAIL(1);
 		if (push_state(STATE_PACK_DIST, 0))
@@ -1512,7 +1506,7 @@ void check_states(void)
 	evTmp = dev_ADC0_BIT;
 	for (uint8_t i = 0; i < 4; i++)
 	{
-    	if ( uxBits & evTmp )
+    	if ( (uxBits & evTmp) != 0 )
 		{
             IF_STQ_AVAIL(1);
 			if (push_state(STATE_PACK_ADC, i))
@@ -1527,20 +1521,8 @@ void check_states(void)
 
 bool push_state(uint8_t mstate, uint8_t num)
 {
-	static char pack[20];
-    /*
-    lenStateQueue = state_QUEUE_LEN - uxQueueSpacesAvailable(xStateQueue);
-    if (lenStateQueue >= (state_QUEUE_LEN - 1))
-    {
-    	return false;    	
-    }
-    */
-    /*
-    if ( uxQueueSpacesAvailable(xStateQueue) == 0 )
-    {
-    	return false;
-	}
-	*/
+    static char pack[20];
+
     bool ret = true;
     strcpy(pack, js_begin);
     
@@ -2054,8 +2036,8 @@ TickType_t echo_one_shot(void)
         // засекаем время
         TickType_t xLastWakeTime2 = xTaskGetTickCount();
                         
-        //TIM1_CR1 &= ~TIM_CR1_CEN;
-        timer_enable_counter(TIM1);
+        // на случай, если нет импульса от эхо-сенсора
+        timer_disable_counter(TIM1);
                 
         // за какое время получили отклик?
         return (xLastWakeTime2 - xLastWakeTime1);
@@ -2069,7 +2051,7 @@ void ADC_calc(void)
     //// printf("ADC_calc");
     // 1-е измерение по каждому каналу отбрасываем, 2-е и 3-е усредняются
     uint16_t v = (ADCbuffer[1] + ADCbuffer[2]) >> 1;    // 3v3
-    if (abs(adcval[0] - v) > 7)
+    if (abs(adcval[0] - v) > 5)
     {
     	//adcval[0].checked = false;
     	xEventGroupSetBits(xEventGroupDev, dev_ADC0_BIT);
@@ -2077,7 +2059,7 @@ void ADC_calc(void)
     adcval[0] = v;  //3v3
 
     v = (ADCbuffer[10] + ADCbuffer[11]) >> 1; // 6v
-    if (abs(adcval[1] - v) > 7)
+    if (abs(adcval[1] - v) > 5)
     {
     	//adcval[1].checked = false;
     	xEventGroupSetBits(xEventGroupDev, dev_ADC1_BIT);
@@ -2094,7 +2076,7 @@ void ADC_calc(void)
 	}
 
     v = (ADCbuffer[7] + ADCbuffer[8]) >> 1; // P5
-    if (abs(adcval[2] - v) > 7)
+    if (abs(adcval[2] - v) > 5)
     {
     	//adcval[2].checked = false;
     	xEventGroupSetBits(xEventGroupDev, dev_ADC2_BIT);
@@ -2102,7 +2084,7 @@ void ADC_calc(void)
     adcval[2] = v;  // P5
 
     v = (ADCbuffer[4] + ADCbuffer[5]) >> 1; // P6
-    if (abs(adcval[2] - v) > 7)
+    if (abs(adcval[2] - v) > 5)
     {
     	//adcval[3].checked = false;
     	xEventGroupSetBits(xEventGroupDev, dev_ADC3_BIT);
@@ -2125,7 +2107,13 @@ void ADC_calc(void)
             xEventGroupSetBits( xEventGroupADC, alarm_CONTRL_LOW_VOLTAGE_BIT);
 		}
 
-       	// батарея моторов разряжена
+        if ( delta > LOAD_MAX )
+        {
+            // слишком большой ток
+            xEventGroupSetBits( xEventGroupADC, alarm_OVERLOAD_BIT);
+        }
+
+       	/* батарея моторов разряжена - нет смысла
 		if ( adcval[1] < BATT_LOW_LEVEL )
         {
            	// батарея моторов разряжена
@@ -2137,12 +2125,9 @@ void ADC_calc(void)
 			}
             xEventGroupSetBits( xEventGroupADC, alarm_MOTORS_LOW_VOLTAGE_BIT);                
 
-            if ( delta > LOAD_MAX )
-            {
-              	// слишком большой ток
-                xEventGroupSetBits( xEventGroupADC, alarm_OVERLOAD_BIT);
-            }
         }
+        */
+
     }
 	
 }	
@@ -2360,10 +2345,10 @@ static void gpio_setup(void)
 
 	    // Our test LED is connected to Port C pin 13, so let's set it as output
     gpio_clear(GPIOC, GPIO13);
-    gpio_clear(GPIOB, GPIO10|GPIO11|GPIO12|GPIO13|GPIO14|GPIO4|GPIO5|GPIO6|GPIO7|GPIO8);
+    gpio_clear(GPIOB, GPIO10|GPIO11|GPIO12|GPIO13|GPIO14|GPIO3|GPIO4|GPIO5|GPIO6|GPIO7|GPIO8);
     gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
     gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL,
-        GPIO10|GPIO11|GPIO12|GPIO13|GPIO14|GPIO4|GPIO5|GPIO6|GPIO7|GPIO8);
+        GPIO10|GPIO11|GPIO12|GPIO13|GPIO14|GPIO3|GPIO4|GPIO5|GPIO6|GPIO7|GPIO8);
 
     // заранее обнуляем A11, A15
     gpio_clear(GPIOA, GPIO11|GPIO15);
@@ -2652,7 +2637,7 @@ void exti15_10_isr(void)
         if ( gpio_get(POWEROFF_PORT, POWEROFF_PIN) == 0 )
         {
             // нажата кнопка питания
-            //xEventGroupSetBits( xEventGroupADC, alarm_POWER_BUTTON_BIT);
+            xEventGroupSetBits( xEventGroupADC, alarm_POWER_BUTTON_BIT);
         }
     }
         
@@ -2677,7 +2662,7 @@ void exti15_10_isr(void)
             echo_count = timer_get_counter(TIM1);
             //TIM1_CR1 &= ~TIM_CR1_CEN;
             timer_disable_counter(TIM1);
-            //xSemaphoreGiveFromISR(xSemaphHandleEcho, &xHigherPriorityTaskWoken);
+            xSemaphoreGiveFromISR(xSemaphHandleEcho, &xHigherPriorityTaskWoken);
         }
     }
         

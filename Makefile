@@ -76,7 +76,10 @@ $(PROJECT).sym: $(PROJECT).elf
 	$(NM) -n $< > $@
 
 clean:
-	rm *.elf *.o *.d *.hex *.list *.sym *.bin
+#	rm *.elf *.o *.d *.hex *.list *.sym *.bin
+	@#printf "  CLEAN\n"
+	$(Q)$(RM) *.elf *.o *.d *.hex *.list *.sym *.bin
+
 
 # Using CC and CFLAGS will cause any object files to be built implicitely if
 # they are missing. # We are searching an archive library opencm3_stm32f4.a

@@ -38,17 +38,17 @@
 #define SERVO_180GRAD		(36 - 1)
 
 // внешние светодиоды
-#define LED0_PIN        	GPIO13	// на плате запаян PB3
-#define LED0_PORT       	GPIOC
+#define LED0_PIN        	GPIO3	// на плате запаян PB3
+#define LED0_PORT       	GPIOB
 #define LED1_PIN        	GPIO4
 #define LED1_PORT       	GPIOB
-#define LED2_PIN        	GPIO14
-#define LED2_PORT       	GPIOB
-#define LED3_PIN        	GPIO15
-#define LED3_PORT       	GPIOA
+#define LED2_PIN        	GPIO15
+#define LED2_PORT       	GPIOA
+#define LED3_PIN        	GPIO14
+#define LED3_PORT       	GPIOB
 
-//#define BOARD_LED_PIN   	GPIO13
-//#define BOARD_LED_PORT  	GPIOC
+#define BOARD_LED_PIN   	GPIO13
+#define BOARD_LED_PORT  	GPIOC
 
 #define STEPP_PORT			GPIOB
 
@@ -115,26 +115,26 @@
 #define dev_LED2_BIT			(1UL << 11UL)
 #define dev_LED3_BIT			(1UL << 12UL)
 
-// АЦП выдает по питанию приблизительно 617 единиц на 1 вольт
-#define BATT_LOW_LEVEL		1720	// порог предупреждения о разряде батареи - 11.1V
-#define BATT_OFF_LEVEL		1580	// порог аварийного отключения по разряду батареи 10.2V
+// АЦП val = U * 1000 / 4.64
+#define BATT_LOW_LEVEL		2390	// порог предупреждения о разряде батареи - 11.1V
+#define BATT_OFF_LEVEL		2200	// порог аварийного отключения по разряду батареи 10.2V
 
-#define SENS_LEVEL_4		2000
-#define SENS_LEVEL_5		2171
+#define SENS_LEVEL_4		2000	// ?
+#define SENS_LEVEL_5		2171	// ?
 
-#define SENS_LEVEL_8		2700
-#define SENS_LEVEL_9		2986
+#define SENS_LEVEL_8		2700	// ?
+#define SENS_LEVEL_9		2986	// ?
 
 // корректировка положения оси - пока не используется
-#define AXLE_CORR			80
+#define AXLE_CORR			80		// ?
 
 // порог обнаружения нагрузки
-#define LOAD_DETECT		30
+#define LOAD_DETECT		30			// ?
 
 // значение motors_delta, при котором определяется недопустимая нагрузка
-#define LOAD_MAX		1000	// ???????????????????
+#define LOAD_MAX		50	// ???????????????????
 // максимальное отклонение от оси
-#define STEPPER_ANGLE 		32
+#define STEPPER_ANGLE 		32		// для эхо-локатора
 #define STEPPER_ANGLE_TURN	512 	// угол 1 оборота = 512 ( * 8 = 4096 )
 #define STEPPER_TURNS_DIV	9		// степень двойки в 512
 #define STEPPER_TURN_MASK	0x1FF	// остаток от делния на 512
@@ -144,24 +144,6 @@
 // в таймере значение умножается на 16 (0..PWM_MAX_VALUE-1)
 #define MOTOR_MAX_VALUE	32
 #define PWM_MAX_VALUE	511
-
-// байт ошибок
-#define ERR_BATT_CTRL_LOW	0x80
-#define ERR_BATT_MOTOR_LOW	0x40
-#define ERR_OVERLOAD		0x20
-#define ERR_ESENSOR_OFF		0x10
-#define ERR_STEP0_OFF		0x08
-#define ERR_STEP1_OFF		0x04
-//#define ERR_MOT1_OFF		0x02
-#define ERR_MOT_OFF			0x01
-
-// байт статусов
-#define ESENSOR_QUEUE		0x20
-#define MOTORS_QUEUE		0x10
-#define CMD_BUFF_IS_FULL	0x08
-#define AXLE_SEARCHING		0x04
-#define STEPP1_QUEUE		0x02
-#define STEPP0_QUEUE		0x01
 
 #define MOTOR_START_TIME	50	// время на трогание мотора, mS
 #define MOTOR_GEAR0			0
@@ -344,27 +326,6 @@ typedef struct _mob_leds {
 	//bool checked;
 } mob_leds;
 
-/*
-typedef struct _voltage {
-	uint16_t motors;			// напряжение на батарее моторов
-	uint16_t delta;				// разность напряжений на входах БП на 3.3 и 6 вольт
-	uint16_t ctrl;				// напряжение на батарее контроллера
-	uint16_t P5;				// напряжение от датчиков P5
-	uint16_t P6;				// напряжение от датчиков P6
-	bool checked;
-} voltage;
-
-typedef struct _adcvalue {
-	uint16_t value;
-	bool checked;
-} adcvalue;
-*/
-/*
-typedef struct _queuestat {
-	uint16_t value;
-	bool checked;
-} queuestat;
-*/
 enum {
 	SERVO_OFF = 0,
 	SERVO_ON
@@ -374,7 +335,6 @@ typedef struct _servo_drive {
 	uint8_t stat;
 	uint8_t angle;
 	uint8_t angle_prev;
-	//bool checked;
 } servo_drive;
 
 void vApplicationTickHook( void );
