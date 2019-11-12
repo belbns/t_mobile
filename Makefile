@@ -18,6 +18,7 @@ OBJDUMP		= $(PREFIX)-objdump
 GDB		= $(PREFIX)-gdb
 NM 		= $(PREFIX)-nm
 SIZE		= $(PREFIX)-size
+STFLASH		= $(shell which st-flash)
 
 DEBUG           ?= -ggdb3
 CSTD            ?= -std=c99
@@ -76,10 +77,12 @@ $(PROJECT).sym: $(PROJECT).elf
 	$(NM) -n $< > $@
 
 clean:
-#	rm *.elf *.o *.d *.hex *.list *.sym *.bin
 	@#printf "  CLEAN\n"
 	$(Q)$(RM) *.elf *.o *.d *.hex *.list *.sym *.bin
 
+flash:
+	@printf "  FLASH  $<\n"
+	$(STFLASH) write $(PROJECT).bin 0x8000000
 
 # Using CC and CFLAGS will cause any object files to be built implicitely if
 # they are missing. # We are searching an archive library opencm3_stm32f4.a

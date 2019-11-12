@@ -87,7 +87,7 @@
 #define ble_RECIEVED_JSON		(1UL << 0UL)
 #define ble_DISCONNECTED		(1UL << 1UL)
 
-// биты для xEventGroupADC - события, определяемые по результатам АЦП
+// биты для xEventGroupAlrm - события от внешних сигналов и измерений
 #define alarm_POWER_BUTTON_BIT			(1UL << 0UL)
 #define alarm_CONTRL_LOW_VOLTAGE_BIT	(1UL << 1UL)
 #define alarm_CONTRL_OFF_VOLTAGE_BIT	(1UL << 2UL)
@@ -101,19 +101,20 @@
 #define alarm_POWER_COMMAND_BIT			(1UL << 10UL)
 
 // биты для xEventGroupDev - необходимость передачи статуса устройств
-#define dev_MOTORS_BIT			(1UL << 0UL)
-#define dev_STEPP1_BIT			(1UL << 1UL)
-#define dev_STEPP2_BIT			(1UL << 2UL)
-#define dev_SERVO_BIT			(1UL << 3UL)
-#define dev_DIST_BIT			(1UL << 4UL)
-#define dev_ADC0_BIT			(1UL << 5UL)
-#define dev_ADC1_BIT			(1UL << 6UL)
-#define dev_ADC2_BIT			(1UL << 7UL)
-#define dev_ADC3_BIT			(1UL << 8UL)
-#define dev_LED0_BIT			(1UL << 9UL)
-#define dev_LED1_BIT			(1UL << 10UL)
-#define dev_LED2_BIT			(1UL << 11UL)
-#define dev_LED3_BIT			(1UL << 12UL)
+#define dev_ADC0_BIT			(1UL << 0UL)
+#define dev_ADC1_BIT			(1UL << 1UL)
+#define dev_ADC2_BIT			(1UL << 2UL)
+#define dev_ADC3_BIT			(1UL << 3UL)
+#define dev_LED0_BIT			(1UL << 4UL)
+#define dev_LED1_BIT			(1UL << 5UL)
+#define dev_LED2_BIT			(1UL << 6UL)
+#define dev_LED3_BIT			(1UL << 7UL)
+#define dev_MOTORS_BIT			(1UL << 8UL)
+#define dev_STEPP1_BIT			(1UL << 9UL)
+#define dev_STEPP2_BIT			(1UL << 10UL)
+#define dev_SERVO_BIT			(1UL << 11UL)
+#define dev_DIST_BIT			(1UL << 12UL)
+
 
 // АЦП val = U * 1000 / 4.64
 #define BATT_LOW_LEVEL		2390	// порог предупреждения о разряде батареи - 11.1V
@@ -153,7 +154,7 @@
 
 // Максимальное время отутствия пакетов от пульта в mS 
 // - при достижениии формируется STOP_ALL
-#define WAIT_FOR_PACK		300000	// 5 min
+#define WAIT_FOR_PACK		600000	// 10 мин. - уменьшить после отладки
 
 #define MIN_STEPS_PER_SEC	1	// кол-во импульсов в секунду датчика движения
 								//  при самом медленном вращении колеса
