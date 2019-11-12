@@ -1976,14 +1976,14 @@ void ADC_calc(void)
 
     // 1-е измерение по каждому каналу отбрасываем, 2-е и 3-е усредняются
     uint16_t v = (ADCbuffer[1] + ADCbuffer[2]) >> 1;    // 3v3
-    if (abs(adcval[0] - v) > 5)
+    if (abs(adcval[0] - v) > 7)
     {
     	xEventGroupSetBits(xEventGroupDev, dev_ADC0_BIT);
         adcval[0] = v;
 	}
 
     v = (ADCbuffer[10] + ADCbuffer[11]) >> 1; // 6v
-    if (abs(adcval[1] - v) > 5)
+    if (abs(adcval[1] - v) > 7)
     {
     	xEventGroupSetBits(xEventGroupDev, dev_ADC1_BIT);
         adcval[1] = v;
@@ -1999,14 +1999,14 @@ void ADC_calc(void)
 	}
 
     v = (ADCbuffer[7] + ADCbuffer[8]) >> 1; // P5
-    if (abs(adcval[2] - v) > 5)
+    if (abs(adcval[2] - v) > 7)
     {
     	xEventGroupSetBits(xEventGroupDev, dev_ADC2_BIT);
         adcval[2] = v;
 	}
 
     v = (ADCbuffer[4] + ADCbuffer[5]) >> 1; // P6
-    if (abs(adcval[2] - v) > 5)
+    if (abs(adcval[2] - v) > 7)
     {
     	xEventGroupSetBits(xEventGroupDev, dev_ADC3_BIT);
         adcval[3] = v;
@@ -2027,7 +2027,7 @@ void ADC_calc(void)
             xEventGroupSetBits( xEventGroupAlrm, alarm_CONTRL_LOW_VOLTAGE_BIT);
 		}
 
-        if ( adcval[0] > LOAD_MAX )
+        if ( adcval[4] > LOAD_MAX )
         {
             // слишком большой ток
             xEventGroupSetBits( xEventGroupAlrm, alarm_OVERLOAD_BIT);
@@ -2095,17 +2095,16 @@ static void clock_setup(void)
 {
     rcc_clock_setup_in_hse_8mhz_out_72mhz();
 
-    /* Enable GPIOB clock (for LED GPIOs). */
+    /* Enable clocks for GPIOA clock (for GPIO_USART1_TX) and USART1. */
+    rcc_periph_clock_enable(RCC_GPIOA);
     rcc_periph_clock_enable(RCC_GPIOB);
+    rcc_periph_clock_enable(RCC_GPIOC);
+    rcc_periph_clock_enable(RCC_AFIO);
 
     // JTAG-DP Disabled and SW-DP Enabled:
     AFIO_MAPR &= ~AFIO_MAPR_SWJ_MASK;               // 0 to 24..26
     AFIO_MAPR |= AFIO_MAPR_SWJ_CFG_JTAG_OFF_SW_ON;  // (0x2 << 24) - 1 to 25
 
-    /* Enable clocks for GPIOA clock (for GPIO_USART1_TX) and USART1. */
-    rcc_periph_clock_enable(RCC_GPIOA);
-    rcc_periph_clock_enable(RCC_GPIOB);
-    rcc_periph_clock_enable(RCC_GPIOC);
     rcc_periph_clock_enable(RCC_USART1);
     rcc_periph_clock_enable(RCC_DMA1);
 
@@ -2156,6 +2155,7 @@ static void gpio_setup(void)
     gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG, GPIO3);
     gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG, GPIO4);
 
+    // от ножки 25(PIO2) HM-10 - индикация установленного соединения
     gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_FLOAT, GPIO12);
 
     nvic_enable_irq(NVIC_EXTI9_5_IRQ);
@@ -2171,13 +2171,14 @@ static void gpio_setup(void)
     exti_set_trigger(EXTI15, EXTI_TRIGGER_BOTH);
     exti_enable_request(EXTI15);
 
-    // по нажатию кнопки питания
+    /* по нажатию кнопки питания - эту функцию теперь выполняет EXTI8
     exti_select_source(EXTI12, GPIOA);
     exti_set_trigger(EXTI12, EXTI_TRIGGER_BOTH);
     exti_enable_request(EXTI12);
+    */
 
-    // эксперимент: попытаться получить прерывание по выходу PA8
-    // по нажатию кнопки питания и исключить EXTI12 (снять перемычку)
+    // эксперимент: получилось организовать прерывание по просадке выхода PA8
+    // при нажатии кнопки питания и исключить EXTI12 (снять перемычку)
     exti_select_source(EXTI8, GPIOA);
     exti_set_trigger(EXTI8, EXTI_TRIGGER_FALLING);
     exti_enable_request(EXTI8);
@@ -2192,11 +2193,8 @@ void exti9_5_isr(void)
     if (exti_get_flag_status(EXTI8) != 0)
     {
         exti_reset_request(EXTI8);
-        if ( gpio_get(POWEROFF_PORT, POWEROFF_PIN) == 0 )
-        {
-            // нажата кнопка питания
-            xEventGroupSetBits( xEventGroupAlrm, alarm_POWER_BUTTON_BIT);
-        }
+        // нажата кнопка питания
+        xEventGroupSetBits( xEventGroupAlrm, alarm_POWER_BUTTON_BIT);
     }
         
     // прерывание по счетчику пути
@@ -2220,6 +2218,7 @@ void exti15_10_isr(void)
     BaseType_t xHigherPriorityTaskWoken;
     xHigherPriorityTaskWoken = pdFALSE;
 
+    /* эту функцию теперь выполняет EXTI8
     if (exti_get_flag_status(EXTI12) != 0)
     {
         exti_reset_request(EXTI12);
@@ -2229,7 +2228,7 @@ void exti15_10_isr(void)
             xEventGroupSetBits( xEventGroupAlrm, alarm_POWER_BUTTON_BIT);
         }
     }
-        
+    */    
     if (exti_get_flag_status(EXTI15) != 0)
     {
         exti_reset_request(EXTI15);
