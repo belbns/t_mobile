@@ -16,8 +16,7 @@ but the test should work on the majority of STM32 based boards.
 #include <stdio.h>
 #include <string.h>
 
-#include "jfes.h"
-#include "jfes_const.h"
+#include "pars_const.h"
 #include "periph.h"
 
 /* Libopencm3 includes. */
@@ -51,12 +50,12 @@ static uint8_t iBleBuf = 0;
 static char cBleInBuf[BLE_PACK_SIZE + 4];
 static char cReceivedPack[BLE_PACK_SIZE + 4];
 //static uint32_t nocmd_count = 0;
-
+/*
 jfes_config_t config;
 jfes_parser_t parser;
 jfes_token_t tokens[JFES_MAX_TOKENS_COUNT];
 jfes_size_t tokens_count = JFES_MAX_TOKENS_COUNT;
-
+*/
 
 uint16_t ADCbuffer[12];
 uint16_t echo_count = 0;
@@ -79,6 +78,7 @@ static volatile uint16_t lenStateQueue = 0;
 
 static uint8_t init_process = 0;  // идет инициализация железа
 static uint16_t adcval[5] = {0, 0, 0, 0, 0}; // 3.3V, 6V, P5, P6, delta
+static char jparams[3][8];  // параметры из пакета
 
 static TickType_t leds_delay = pdMS_TO_TICKS(1000);
 static TickType_t board_led_delay = pdMS_TO_TICKS(500);
@@ -114,6 +114,7 @@ static void dma_write(char *data, int size);
 char * itoa(int val, int base);
 
 void ADC_calc(void);
+uint8_t get_fields(char *fld);
 void running_delay(uint32_t lasting, uint8_t c_status);
 void procSteppCmd(uint8_t stnum, ncommand_item cmd);
 TickType_t echo_one_shot(void);
@@ -310,15 +311,15 @@ static void prvMainTask(void *pvParameters)
 {
     ( void ) pvParameters;
 
-	jfes_value_t value;
-    jfes_array_t *jarr;
-    jfes_value_t *newvalue;
+	//jfes_value_t value;
+    //jfes_array_t *jarr;
+    //jfes_value_t *newvalue;
     
     board_led_delay = 250;  // init process
     // init jfes
-    config.jfes_malloc = (jfes_malloc_t)pvPortMalloc;
-    config.jfes_free = vPortFree;
-    jfes_init_parser(&parser, &config);
+    //config.jfes_malloc = (jfes_malloc_t)pvPortMalloc;
+    //config.jfes_free = vPortFree;
+    //jfes_init_parser(&parser, &config);
                 
     //service_blink_on(pdMS_TO_TICKS(500));
 
@@ -348,13 +349,17 @@ static void prvMainTask(void *pvParameters)
 
     board_led_delay = 1000;  // normal process
 
-    int16_t ipar16 = 0;
-    int16_t num = 0;
+    //int16_t ipar16 = 0;
+    //int16_t num = 0;
     uint16_t tmp = 0;
-    char st[4];
     EventBits_t uxBits;
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
+
+    // для парсинга пакета
+    static char tag[8];
+    static char fields[20];
+    static char tmpbuff[32];
 
 	// Основной цикл
     for (;;)
@@ -428,265 +433,151 @@ static void prvMainTask(void *pvParameters)
 		if ( (uxBits & ble_RECIEVED_JSON) != 0 )
         {
         	// пришел пакет от ДУ, обрабатываем cReceivedPack[]
-			st[0] = '\0';
             bool parsed = false;
             // парсим входящий пакет, в пакете может быть только 1 команда
-			jfes_status_t status = jfes_parse_to_value(&config, cReceivedPack, strlen(cReceivedPack), &value);
-			if (status == jfes_success)
+            char *pb = strchr(cReceivedPack, '{');
+            char *pe = strchr(cReceivedPack, '}');
+            int16_t ll = (int16_t)(pe - pb);
+            if ( (pb != NULL) && (pe != NULL) && (ll > 0) ) // похож на JSON
             {
-            	// PAUSE
-                newvalue = jfes_get_child(&value, jsp_pause, 0);
-                if (newvalue)
+                strncpy(tmpbuff, (pb + 1), ll - 1); // без {}
+
+                bool fl_js = false;
+                char *token = strtok(tmpbuff, ":");
+                if (token != NULL)
                 {
-                	put_to_cmd_queue(PAUSE, newvalue->data.int_val);
-					parsed = true;
-				}
-				// POWER_OFF
-                if (!parsed)
-                {
-                	newvalue = jfes_get_child(&value, jsp_pwroff, 0);
-					if (newvalue)
+                    strcpy(tag, token);
+                    token = strtok(NULL, ":");
+                    if (token != NULL)
                     {
-                    	bool now = newvalue->data.bool_val;
-						if (now)                // выключить немедленно
-						{
-                        	push_state(STATE_PACK_PWROFF_CMD, 0);
-							flag_power_off = 1;
-                            vTaskDelay(pdMS_TO_TICKS(100));
-							power_off();
-						}
-                        else
-						{
-                        	put_to_cmd_queue(POWER_OFF, 0);
-						}
+                        strcpy(fields, token);
+                        fl_js = true;
                     }
-				}
-                // STOP_ALL
-                if (!parsed)
-                {
-                	newvalue = jfes_get_child(&value, jsp_stop, 0);
-                    if (newvalue)
+                    else
                     {
-                    	bool now = newvalue->data.bool_val;
-                        if (now)                // остановить немедленно
+                        fields[0] = '\0';
+                    }
+                }
+                else
+                {
+                    token[0] = '\0';
+                }
+
+                uint8_t n_params = get_fields(fields);
+                if (fl_js && (n_params > 0))  // есть команда и параметры
+                {
+                    // обработка команд
+                    parsed = false;
+                    if (strstr(tag, jsp_pause)) // PAUSE
+                    {
+                        put_to_cmd_queue(PAUSE, atoi(jparams[0]));
+                        parsed = true;
+                    }
+
+                    if ( !parsed && strstr(tag, jsp_pwroff)) // POWER_OFF
+                    {
+                        parsed = true;
+                        if (strstr(jparams[0], js_true))
                         {
-                        	xQueueReset(xCmdMotQueue);
-							xQueueReset(xCmdSt1Queue);
+                            // выключить без очереди
+                            push_state(STATE_PACK_PWROFF_CMD, 0);
+                            flag_power_off = 1;
+                            vTaskDelay(pdMS_TO_TICKS(100));
+                            power_off();
+                        }
+                        else // в очередь
+                        {
+                            put_to_cmd_queue(POWER_OFF, 0);
+                        }
+                    }
+
+                    if ( !parsed && strstr(tag, jsp_stop)) // STOP_ALL
+                    {
+                        parsed = true;
+                        if (strstr(jparams[0], js_true))
+                        {
+                            // немедленно
+                            xQueueReset(xCmdMotQueue);
+                            xQueueReset(xCmdSt1Queue);
                             xQueueReset(xCmdSt2Queue);
                             xQueueReset(xCmdServoQueue);
-                            stop_all();
-						}
+                            stop_all();                            
+                        }
                         else
                         {
-                        	put_to_cmd_queue(STOP_ALL, 0);
-						}
-					}
-				}
-                /*
-                MOT_STOP,
-                MOT_UP_DOWN,
-                MOT_RIGHT,
-				MOT_LEFT,
-                MOT_STRAIGHT
-                */
-                if (!parsed)
-                {
-                	newvalue = jfes_get_child(&value, jsp_mot, 0);
-                    if (newvalue)
+                            put_to_cmd_queue(STOP_ALL, 0);
+                        }
+                    }
+
+                    if ( !parsed && strstr(tag, jsp_mot)) // MOT_STOP,UP_DOWN,RIGHT,LEFT,SRAIGHT
                     {
-                    	if (newvalue->type == jfes_type_array)// 2 параметра - f, b, p
+                        parsed = true;
+                        if (n_params == 2)  // 2 параметра - f, b, p
                         {
-                        	jarr = newvalue->data.array_val;
-                            if (jarr->items[0]->type == jfes_type_string)
-                            {
-                            	memcpy(st, jarr->items[0]->data.string_val.data,
-                                			jarr->items[0]->data.string_val.size);
-								if (jarr->items[1]->type == jfes_type_integer)
-								{
-                                	put_motors_cmd(st[0], jarr->items[1]->data.int_val);
-								}
-                                else
-                                {
-                                	// printf("*** error intoken motors (1)!\n");
-								}
-							}
-                            else
-                            {
-                            	// printf("*** error in token motors (0)!\n");
-							}
-						}
-                        else if (newvalue->type == jfes_type_string) // 1 параметр - l, n, r, s
+                            put_motors_cmd(jparams[0][1], atoi(jparams[1]));
+                        }
+                        else if (n_params == 1)  // 1 параметр - l,r,n,s
                         {
-                        	memcpy(st, newvalue->data.string_val.data,
-									newvalue->data.string_val.size);
-							put_motors_cmd(st[0], 0);
-						}
-					}
-				}
-				/*
-                ST_NULL,
-                ST_STOP,
-                ST_CONT,
-                ST_CONT_STOP,
-                ST_RET,
-                */
-                if (!parsed)
-                {
-                	newvalue = jfes_get_child(&value, jsp_st, 0);
-					if (newvalue)
+                            put_motors_cmd(jparams[0][1], 0);
+                        }
+
+                    }
+
+                    if ( !parsed && strstr(tag, jsp_st)) //ST_NULL,STOP,CONT,CONT_STOP,RET
                     {
-						if (newvalue->type == jfes_type_array) {
-                        	jarr = newvalue->data.array_val;
-                            if (jarr->items[0]->type == jfes_type_string)
-                            {
-                            	memcpy(st, jarr->items[0]->data.string_val.data,
-                                			jarr->items[0]->data.string_val.size);
-								if (jarr->items[1]->type == jfes_type_integer)
-                                {
-                                	num = jarr->items[1]->data.int_val;
-                                    if ( (jarr->count > 2) && (jarr->items[2]->type == jfes_type_integer) )
-									{
-                                    	ipar16 = (uint8_t)jarr->items[2]->data.int_val;
-                                    }
-                                    else
-                                    {
-                                    	ipar16 = 0;
-									}
-                                    put_stepp_cmd(num, st[0], ipar16);
-								}
-                                else
-                                {
-                                	// printf("*** error in token stepp (1)!\n");
-								}
-							}
-                            else
-                            {
-                            	// printf("*** error in token stepp (0)!\n");
-							}
-						}
-					}
-				}
-                // LEDS_MOD
-                if (!parsed)
-                {
-                	newvalue = jfes_get_child(&value, jsp_led, 0);
-                    if (newvalue)
-                    {
-                    	if (newvalue->type == jfes_type_array)
-                    	{
-                        	jarr = newvalue->data.array_val;
-							if (jarr->items[0]->type == jfes_type_string)
-                            {
-                            	memcpy(st, jarr->items[0]->data.string_val.data,
-                                			jarr->items[0]->data.string_val.size);
-								if (jarr->items[1]->type == jfes_type_integer)
-                                {
-                                	ipar16 = jarr->items[1]->data.int_val;
-                                    put_leds_cmd(st[0], ipar16);
-								}
-                                else
-                                {
-									// printf("*** error in token leds (1)!\n");
-                                }
-							}
-                            else
-                            {
-                            	// printf("*** error in token leds (0)!\n");
-							}
-						}
-					}
-				}
-                // SERVO_SET
-                // SERVO_PAUSE
-                if (!parsed)
-                {
-                	newvalue = jfes_get_child(&value, jsp_servo, 0);
-					if (newvalue)
-                    {
-                    	if (newvalue->type == jfes_type_array)
-                    	{
-                        	jarr = newvalue->data.array_val;
-                        	if (jarr->items[0]->type == jfes_type_string)
-                            {
-                            	memcpy(st, jarr->items[0]->data.string_val.data,
-                                			jarr->items[0]->data.string_val.size);
-								if (jarr->items[1]->type == jfes_type_integer)
-                                {
-                                	ipar16 = jarr->items[1]->data.int_val;
-                                    put_servo_cmd(st[0], ipar16);
-								}
-								else
-                                {
-                                	// printf("*** error in token servo (1)!\n");
-								}
-							}
-                            else
-                            {
-                            	// printf("*** error in token servo (0)!\n");
-							}
-						}
-					}
-				}
-                // DIST_SHOT
-                // DIST_PAUSE
-                if (!parsed)
-                {
-                	newvalue = jfes_get_child(&value, jsp_echo, 0);
-					if (newvalue)
-                    {
-                    	if (newvalue->type == jfes_type_array)
+                        parsed = true;
+
+
+                        if (n_params == 2)  // 2 параметра - h,n,s,l,r
                         {
-                        	jarr = newvalue->data.array_val;
-                            if (jarr->items[0]->type == jfes_type_string)
-                            {
-                            	memcpy(st, jarr->items[0]->data.string_val.data,
-                                			jarr->items[0]->data.string_val.size);
-								if (jarr->items[1]->type == jfes_type_integer)
-								{
-                                	ipar16 = jarr->items[1]->data.int_val;
-                                    put_dist_cmd(st[0], ipar16);
-								}
-                                else
-                                {
-                                	// printf("*** error in token dist (1)!\n");
-								}
-							}
-                            else
-                            {
-                            	// printf("*** error in token dist (0)!\n");
-							}
-						}
-					}
-				}
-                /*
-                CNT_SET_OFF,
-                CNT_SET_ON_MS,
-                CNT_SET_ON_STEPS,
-                CNT_RESET
-                */
-				if (!parsed)
-                {
-                	newvalue = jfes_get_child(&value, jsp_dist, 0);
-                    if (newvalue)
-                    {
-                    	tmp = NO_COMMAND;
-                        memcpy(st, newvalue->data.string_val.data, newvalue->data.string_val.size);
-                        switch (st[0])
+                            put_stepp_cmd((uint8_t)atoi(jparams[1]), jparams[0][1], 0);                            
+                        }
+                        else if (n_params == 3)  // 3 параметра - a,p
                         {
-                        	case 'm':       // в милисекундах
-                            	tmp = CNT_SET_ON_MS;
+                            put_stepp_cmd((uint8_t)atoi(jparams[1]), jparams[0][1], 
+                                (uint16_t)atoi(jparams[2]));                            
+                        }
+                    }
+
+                    if ( !parsed && strstr(tag, jsp_led)) // LEDS_MOD
+                    {
+                        parsed = true;
+                        put_leds_cmd(jparams[0][1], (uint16_t)atoi(jparams[1]));
+                    }
+
+                    if ( !parsed && strstr(tag, jsp_servo)) // SERVO_SET, PAUSE
+                    {
+                        parsed = true;
+                        put_servo_cmd(jparams[0][1], (uint16_t)atoi(jparams[1]));
+                    }
+
+                    if ( !parsed && strstr(tag, jsp_dist)) // DIST_SHOT, PAUSE
+                    {
+                        parsed = true;
+                        tmp = NO_COMMAND;
+                        switch (jparams[0][1])
+                        {
+                            case 'm':       // в милисекундах
+                                tmp = CNT_SET_ON_MS;
                                 break;
-							case 's':       // в импульсах датчика
-                            	tmp = CNT_SET_ON_STEPS;
+                            case 's':       // в импульсах датчика
+                                tmp = CNT_SET_ON_STEPS;
                                 break;
-							case 'c':       // сбросить
-                            	tmp = CNT_RESET;
+                            case 'c':       // сбросить
+                                tmp = CNT_RESET;
                                 break;
-							default:        // 'n' - не использовать
-                            	tmp = CNT_SET_OFF;
-						}
-						put_to_cmd_queue(tmp, 0);
-					}
+                            default:        // 'n' - не использовать
+                                tmp = CNT_SET_OFF;
+                        }
+                        put_to_cmd_queue(tmp, 0);
+                    }
+
+                    if ( !parsed && strstr(tag, jsp_echo)) // ECHO_ONE, PAUSE
+                    {
+                        parsed = true;
+                        put_leds_cmd(jparams[0][1], (uint16_t)atoi(jparams[1]));
+                    }
+
 				}
 			}
 			// был пакет от пульта
@@ -1967,6 +1858,64 @@ TickType_t echo_one_shot(void)
                 
     // за какое время получили отклик?
     return (xLastWakeTime2 - xLastWakeTime1);
+}
+
+// извлечение полей пакета в jparams
+uint8_t get_fields(char *fld)
+{
+    uint8_t ret = 0;
+    uint8_t multi = 1;
+
+    char *pb = strchr(fld, '[');
+    char *pe = strchr(fld, ']');
+    if ( (pb == NULL) || (pe == NULL) )
+    {
+        multi = 0;
+    }
+
+    if (multi)
+    {
+        *pe = '\0'; // ]
+        char *token = strtok((pb + 1), ",");
+        if (token != NULL)
+        {
+            ret = 1;
+            strcpy(jparams[0], token);
+            token = strtok(NULL, ",");
+            if (token != NULL)
+            {
+                ret = 2;
+                strcpy(jparams[1], token);
+                token = strtok(NULL, ",");
+                if (token != NULL)
+                {
+                    ret = 3;
+                    strcpy(jparams[2], token);
+                }
+                else
+                {
+                    jparams[2][0] = '\0';   
+                }
+            }
+            else
+            {
+                jparams[1][0] = '\0';   
+            }
+        }
+        else
+        {
+            jparams[0][0] = '\0';
+        }
+    }
+    else    // single
+    {
+        strcpy(jparams[0], fld);
+        jparams[1][0] = '\0';
+        jparams[2][0] = '\0';
+        ret = 1;
+    }
+
+    return ret;
 }
 
 // вычисление основных параметров по результатам цикла АЦП

@@ -1,5 +1,5 @@
-#ifndef JFES_CONST_H
-#define JFES_CONST_H
+#ifndef PARS_CONST_H
+#define PARS_CONST_H
 
 // константы для формирования пакета к пульту
 const char js_at[] = "\n\rAT\n\r";

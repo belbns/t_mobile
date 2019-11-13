@@ -5,7 +5,7 @@
 PROJECT		= t_mobile
 
 # The libopencm3 library is assumed to exist in libopencm3/lib, otherwise add files here
-CFILES		+= $(PROJECT).c periph.c jfes.c
+CFILES		+= $(PROJECT).c periph.c
 CFILES		+= tasks.c list.c queue.c timers.c port.c event_groups.c heap_2.c
 
 ENABLE_SEMIHOSTING	= 0
