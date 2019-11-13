@@ -128,7 +128,7 @@ void put_motors_cmd(char command, int16_t iparam);
 void put_stepp_cmd(uint8_t step_num, char command, int16_t iparam);
 void put_servo_cmd(char command, int16_t iparam);
 void put_dist_cmd(char command, int16_t iparam);
-void put_leds_cmd(char command, int16_t iparam);
+void put_leds_cmd(char command, uint16_t iparam);
 
 /* Task priorities. */
 #define mainBLINK_TASK_PRIORITY		( tskIDLE_PRIORITY + 1 )
@@ -550,7 +550,7 @@ static void prvMainTask(void *pvParameters)
                         parsed = true;
                         put_servo_cmd(jparams[0][1], (uint16_t)atoi(jparams[1]));
                     }
-
+                    /*
                     if ( !parsed && strstr(tag, jsp_dist)) // DIST_SHOT, PAUSE
                     {
                         parsed = true;
@@ -575,8 +575,9 @@ static void prvMainTask(void *pvParameters)
                     if ( !parsed && strstr(tag, jsp_echo)) // ECHO_ONE, PAUSE
                     {
                         parsed = true;
-                        put_leds_cmd(jparams[0][1], (uint16_t)atoi(jparams[1]));
+                        put_echo_cmd(jparams[0][1], (uint16_t)atoi(jparams[1]));
                     }
+                    */
 
 				}
 			}
@@ -1066,13 +1067,13 @@ static void prvCmdLedsTask(void *pvParameters)
         // есть ли очередная команда?
         if ( xQueueReceive( xCmdLedsQueue, &item, 0 ) == pdPASS )
         {
-        	switch (item.cmd)
+        	switch (item.param)
             {
             case LED0_MOD:
             case LED1_MOD:
             case LED2_MOD:
             case LED3_MOD:
-            	set_led((uint8_t)item.cmd, item.param);
+            	set_led((uint8_t)item.param, item.cmd);
                 break;
 			case LEDS_PAUSE:
             	running_delay(item.param, cnt_status);
@@ -1728,7 +1729,7 @@ void put_stepp_cmd(uint8_t step_num, char command, int16_t iparam)
 	}
 }
 
-void put_leds_cmd(char command, int16_t iparam)
+void put_leds_cmd(char command, uint16_t iparam)
 {
 	ncommand_item item;
 
