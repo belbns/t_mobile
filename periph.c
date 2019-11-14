@@ -27,14 +27,13 @@
 
 void oneStep(uint8_t pos, uint8_t stpr);
 
-//extern SemaphoreHandle_t xSteppMutex[2];
 extern EventGroupHandle_t xEventGroupADC;
 extern EventGroupHandle_t xEventGroupDev;
 extern SemaphoreHandle_t xSteppMutex[2]; 
 
 motor_ctrl motors = {
     .state = MOTOR_OFF, .gear = GEAR_0, .value1 = 0, .value2 = 0,
-	.pre_value = 0, .need_update1 = 0, .need_update2 = 0   //, .checked = false
+	.dst_value = 0, .need_update1 = 0, .need_update2 = 0   //, .checked = false
 };
 
 stepper stepp[2] = {
@@ -62,12 +61,6 @@ const uint16_t step_pins[2][4] = {
 };
 
 /*
-void vApplicationMallocFailedHook( void )
-{
-
-}
-*/
-/*
  * Callback функция системного таймера.
  * Используется для тактирования шаговых двигателей
  *
@@ -76,8 +69,6 @@ void vApplicationTickHook( void )
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     static uint8_t stepp_count = 0;
-
-//xEventGroupSetBits(xEventGroupDev, (const EventBits_t)0x1FFF);
 
     // тактирование ШД0 - по четным тактам, ШД1 - по нечетным.
     uint8_t i = stepp_count & 1;
@@ -93,7 +84,6 @@ void vApplicationTickHook( void )
             {
                 stepp_stop(i);
                 stepp[i].moving = 0;
-                //stepp[i].checked = false;
                 xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
             }
             else    // непрерывное движение
@@ -106,13 +96,11 @@ void vApplicationTickHook( void )
             if ( stepp[i].clockw )
             {
                 stepp[i].angle_curr++;
-                //stepp[i].checked = false;
                 xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
             }
             else
             {
                 stepp[i].angle_curr--;
-                //stepp[i].checked = false;
                 xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
             }
         }
@@ -129,7 +117,6 @@ void vApplicationTickHook( void )
                 if ((pos == 0) && stepp[i].moving)
                 {
                     stepp[i].angle_curr++;
-                    //stepp[i].checked = false;
                     xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
                 }
                 pos = 7 - pos;
@@ -140,7 +127,6 @@ void vApplicationTickHook( void )
                 if ((pos == 0) && stepp[i].moving)
                 {
                     stepp[i].angle_curr--;
-                    //stepp[i].checked = false;
                     xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
                 }
             }
@@ -155,7 +141,6 @@ void vApplicationTickHook( void )
             // чтобы не было приращения на начальном нуле
             // признак движения устанавливаем после обработки 1-го шага
             stepp[i].moving = 1;
-            //stepp[i].checked = false;
             xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
         }
         // контроль полного оборота
@@ -163,40 +148,17 @@ void vApplicationTickHook( void )
         {
             stepp[i].angle_curr = 0;
             stepp[i].turns++;
-            //stepp[i].checked = false;
             xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
         }
         else if (stepp[i].angle_curr == -STEPPER_ANGLE_TURN)
         {
             stepp[i].angle_curr = 0;
             stepp[i].turns--;
-            //stepp[i].checked = false;
             xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
         }
         xSemaphoreGiveFromISR( xSteppMutex[i], &xHigherPriorityTaskWoken );
     }
 }
-
-/*
-void vApplicationStackOverflowHook( TaskHandle_t pxTask, char *pcTaskName )
-{
-        // This function will get called if a task overflows its stack.   If the
-        // parameters are corrupt then inspect pxCurrentTCB to find which was the
-        // offending task.
-
-        ( void ) pxTask;
-        ( void ) pcTaskName;
-
-        //trace_printf("Stack overflow, Task Name: %s", pcTaskName);
-        gpio_set(BOARD_LED_PORT, BOARD_LED_PIN);
-        for(uint32_t i = 0; i < 720000000; i++)	// 10c
-        {
-        	asm("nop");
-        }
-        gpio_clear(POWER_HOLD_PORT, POWER_HOLD_PIN);	// выключаемся
-        for( ;; );
-}
-*/
 
 /*
     Установка режима ДПТ, таймер TIM3 в режиме PWM1 управляет моторами через L293D.
@@ -264,14 +226,12 @@ void set_motor_value(uint8_t mmask, int8_t value0, int8_t value1)
         {
         	// ждем 0 на TIM3->CCR2
             while (gpio_get(MOTOR1_PORT, MOTOR1_PIN2) != 0) ;
-            //TIM3_CCR1 = pulse0;
             timer_set_oc_value(TIM3, TIM_OC1, pulse0);
         }
         else if (value0 < 0)
         {
         	// ждем 0 на TIM3->CCR1
             while (gpio_get(MOTOR1_PORT, MOTOR1_PIN1) != 0) ;
-            //TIM3_CCR2 = pulse0;
             timer_set_oc_value(TIM3, TIM_OC2, pulse0);
         }
         motors.need_update1 = 0;
@@ -283,20 +243,17 @@ void set_motor_value(uint8_t mmask, int8_t value0, int8_t value1)
         {
         	// ждем 0 на TIM3->CCR3
             while (gpio_get(MOTOR2_PORT, MOTOR2_PIN2) != 0) ;
-            //TIM3_CCR3 = pulse1;
             timer_set_oc_value(TIM3, TIM_OC3, pulse1);
         }
         else if (value1 < 0)
         {
         	// ждем 0 на TIM3->CCR4
             while (gpio_get(MOTOR2_PORT, MOTOR2_PIN1) != 0) ;
-            //TIM3_CCR4 = pulse1;
             timer_set_oc_value(TIM3, TIM_OC4, pulse1);
         }
         motors.need_update2 = 0;
     }
 
-    //motors.checked = false;
     xEventGroupSetBits(xEventGroupDev, dev_MOTORS_BIT);
 
 }
@@ -307,9 +264,7 @@ void set_servo_angle(uint8_t angle)
 	{
 		servo.angle_prev = servo.angle;
 		servo.angle = angle;
-        //TIM2_CCR3 = (uint16_t)(angle + SERVO_0GRAD);
         timer_set_oc_value(TIM2, TIM_OC3, (uint16_t)(angle + SERVO_0GRAD));
-		//servo.checked = false;
         xEventGroupSetBits(xEventGroupDev, dev_SERVO_BIT);        
 	}
 }
@@ -318,13 +273,9 @@ void servo_stop(void)
 {
 	servo.angle_prev = servo.angle;
 	servo.angle = SERVO_90GRAD;
-    //TIM2_CCR3 = 0; ???
     timer_set_oc_value(TIM2, TIM_OC3, (uint16_t)servo.angle);
-	//servo.checked = false;
     xEventGroupSetBits(xEventGroupDev, dev_SERVO_BIT);        
 }
-
-
 
 /*
  * Поворот ШД на один шаг
@@ -396,7 +347,6 @@ void stepp_stop(uint8_t stnum)
 
         stepp[stnum].last_step = 0;
         stepp[stnum].steps = 0;
-        //stepp[stnum].checked = false;
         xEventGroupSetBits(xEventGroupDev, evStep); 
 	}
 }
@@ -424,7 +374,6 @@ void stepp_up_down(uint8_t stnum, int16_t sparam)
 	}
 	stepp[stnum].steps = steps << 3;	// *8
 
-	//stepp[stnum].checked = false;
     xEventGroupSetBits(xEventGroupDev, evStep);        
 }
 
@@ -467,7 +416,6 @@ void stepp_to_null(uint8_t stnum, uint8_t fast)
 			stepp[stnum].steps = ((uint32_t)abs(steps)) << 3;
 			xSemaphoreGive( xSteppMutex[stnum] );
 		}
-		//stepp[stnum].checked = false;
         xEventGroupSetBits(xEventGroupDev, evStep);        
 	}
 }

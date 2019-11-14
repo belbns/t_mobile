@@ -113,7 +113,7 @@
 #define dev_STEPP1_BIT			(1UL << 9UL)
 #define dev_STEPP2_BIT			(1UL << 10UL)
 #define dev_SERVO_BIT			(1UL << 11UL)
-#define dev_DIST_BIT			(1UL << 12UL)
+#define dev_ECHO_BIT			(1UL << 12UL)
 
 
 // АЦП val = U * 1000 / 4.64
@@ -174,23 +174,16 @@ enum {
 	STATE_PACK_STEPP,
 	STATE_PACK_LED,
 	STATE_PACK_SERVO,
-	STATE_PACK_DIST,
+	STATE_PACK_ECHO,
 	STATE_PACK_ADC,
 	STATE_PACK_QUEUE_CMD,
 	STATE_PACK_QUEUE_MOT,
 	STATE_PACK_QUEUE_ST1,
 	STATE_PACK_QUEUE_ST2,
 	STATE_PACK_QUEUE_SERVO,
-	STATE_PACK_QUEUE_DIST,
+	STATE_PACK_QUEUE_ECHO,
 	STATE_PACK_QUEUE_LEDS,
 	STATE_PACK_DBG
-};
-
-enum {
-	GEAR_0 = 0,
-	GEAR_1,
-	GEAR_2,
-	GEAR_3
 };
 
 enum {
@@ -220,7 +213,7 @@ enum {
 	ST_CONT_STOP,
 	ST_RET,
 	ST_AXLE,
-	ST_PAUSE,
+	ST_PAUSE
 };
 
 // команды очереди LEDS
@@ -244,10 +237,10 @@ enum {
 	SERVO_PAUSE
 };
 
-// команды очереди DIST
+// команды очереди ECHO
 enum {
-	DIST_SHOT = 0,
-	DIST_PAUSE
+	ECHO_SHOT = 0,
+	ECHO_PAUSE
 };
 
 // команды общей очереди
@@ -268,6 +261,11 @@ typedef struct _ncommand_item {
 } ncommand_item;
 
 
+#define	GEAR_0	0
+#define	GEAR_1	1
+#define	GEAR_2	2
+#define	GEAR_3	3
+
 enum {
         MOTOR_STOPPED = 0,
         MOTOR_UP,
@@ -283,7 +281,7 @@ typedef struct _motor_ctrl {
         int8_t gear;
         int8_t value1;
         int8_t value2;
-        int8_t pre_value;
+        int8_t dst_value;
         uint8_t need_update1;
         uint8_t need_update2;
         //bool checked;

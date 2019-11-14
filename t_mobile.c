@@ -39,23 +39,9 @@ but the test should work on the majority of STM32 based boards.
 extern void initialise_monitor_handles(void);
 #endif
 
-/* Globals */
-//uint8_t send_buffer[BUFFER_SIZE+3];
-//uint8_t receive_buffer[BUFFER_SIZE+3];
-//uint8_t rxIndex = 0;
-//uint8_t received = 0;
-//uint8_t transfered = 0;
-
 static uint8_t iBleBuf = 0;
 static char cBleInBuf[BLE_PACK_SIZE + 4];
 static char cReceivedPack[BLE_PACK_SIZE + 4];
-//static uint32_t nocmd_count = 0;
-/*
-jfes_config_t config;
-jfes_parser_t parser;
-jfes_token_t tokens[JFES_MAX_TOKENS_COUNT];
-jfes_size_t tokens_count = JFES_MAX_TOKENS_COUNT;
-*/
 
 uint16_t ADCbuffer[12];
 uint16_t echo_count = 0;
@@ -73,7 +59,7 @@ static uint16_t lenCmdSt1Queue = 1;
 static uint16_t lenCmdSt2Queue = 1;
 static uint16_t lenCmdServoQueue = 1;
 static uint16_t lenCmdLedsQueue = 1;
-static uint16_t lenCmdDistQueue = 1;
+static uint16_t lenCmdEchoQueue = 1;
 static volatile uint16_t lenStateQueue = 0;
 
 static uint8_t init_process = 0;  // идет инициализация железа
@@ -118,7 +104,7 @@ uint8_t get_fields(char *fld);
 void running_delay(uint32_t lasting, uint8_t c_status);
 void procSteppCmd(uint8_t stnum, ncommand_item cmd);
 TickType_t echo_one_shot(void);
-void calc_dist(uint16_t count);
+void calc_echo_dist(uint16_t count);
 void echo_pulse(void);
 uint8_t sendPackToBLE(char * blepack);
 void check_states(void);
@@ -127,7 +113,7 @@ void put_to_cmd_queue(uint16_t cmd, int16_t iparam);
 void put_motors_cmd(char command, int16_t iparam);
 void put_stepp_cmd(uint8_t step_num, char command, int16_t iparam);
 void put_servo_cmd(char command, int16_t iparam);
-void put_dist_cmd(char command, int16_t iparam);
+void put_echo_cmd(char command, int16_t iparam);
 void put_leds_cmd(char command, uint16_t iparam);
 
 /* Task priorities. */
@@ -145,7 +131,7 @@ static void prvCmdTask(void *pvParameters);
 static void prvCmdMotTask(void *pvParameters);
 static void prvCmdStTask(void *pvParameters);
 static void prvCmdServoTask(void *pvParameters);
-static void prvCmdDistTask(void *pvParameters);
+static void prvCmdEchoTask(void *pvParameters);
 static void prvCmdLedsTask(void *pvParameters);
 
 // События
@@ -171,7 +157,7 @@ QueueHandle_t xCmdMotQueue;             // очередь команд ДПТ
 QueueHandle_t xCmdSt1Queue;             // очередь команд ШД1
 QueueHandle_t xCmdSt2Queue;             // очередь команд ШД2
 QueueHandle_t xCmdServoQueue;           // очередь команд СЕРВО
-QueueHandle_t xCmdDistQueue;            // очередь команд эхо сенсора
+QueueHandle_t xCmdEchoQueue;            // очередь команд эхо сенсора
 QueueHandle_t xCmdLedsQueue;            // очередь команд светодиодов
 QueueHandle_t xStateQueue;              // очередь состояний для передачи в пульт
 
@@ -213,7 +199,7 @@ int main( void )
     xCmdSt1Queue = xQueueCreate(cmd_QUEUE_LEN, sizeof(ncommand_item));
     xCmdSt2Queue = xQueueCreate(cmd_QUEUE_LEN, sizeof(ncommand_item));
     xCmdServoQueue = xQueueCreate(cmd_QUEUE_LEN, sizeof(ncommand_item));
-    xCmdDistQueue = xQueueCreate(cmd_QUEUE_LEN, sizeof(ncommand_item));
+    xCmdEchoQueue = xQueueCreate(cmd_QUEUE_LEN, sizeof(ncommand_item));
     xCmdLedsQueue = xQueueCreate(cmd_QUEUE_LEN, sizeof(ncommand_item));
     xCmdQueue = xQueueCreate(cmd_QUEUE_LEN, sizeof(ncommand_item));
     xStateQueue = xQueueCreate(state_QUEUE_LEN, sizeof(uint8_t) * (BLE_PACK_SIZE + 1));
@@ -242,7 +228,7 @@ int main( void )
 
 	xTaskCreate( prvCmdServoTask, "ServoCmd", configMINIMAL_STACK_SIZE, NULL, mainBLINK_TASK_PRIORITY, NULL );
 
-	xTaskCreate( prvCmdDistTask, "DistCmd", configMINIMAL_STACK_SIZE, NULL, mainBLINK_TASK_PRIORITY, NULL );
+	xTaskCreate( prvCmdEchoTask, "EchoCmd", configMINIMAL_STACK_SIZE, NULL, mainBLINK_TASK_PRIORITY, NULL );
 
 	xTaskCreate( prvCmdLedsTask, "LedsCmd", configMINIMAL_STACK_SIZE, NULL, mainBLINK_TASK_PRIORITY, NULL );
 
@@ -311,17 +297,7 @@ static void prvMainTask(void *pvParameters)
 {
     ( void ) pvParameters;
 
-	//jfes_value_t value;
-    //jfes_array_t *jarr;
-    //jfes_value_t *newvalue;
-    
     board_led_delay = 250;  // init process
-    // init jfes
-    //config.jfes_malloc = (jfes_malloc_t)pvPortMalloc;
-    //config.jfes_free = vPortFree;
-    //jfes_init_parser(&parser, &config);
-                
-    //service_blink_on(pdMS_TO_TICKS(500));
 
     // не готов к обмену во время инициализации
     usart_disable_rx_interrupt(USART1);
@@ -333,8 +309,6 @@ static void prvMainTask(void *pvParameters)
     set_servo_angle(90);
 
     vTaskDelay(pdMS_TO_TICKS(1000));
-
-    //sendPackToBLE("tM4\n");
 
     // готов к обмену
     usart_enable_rx_interrupt(USART1);
@@ -349,9 +323,6 @@ static void prvMainTask(void *pvParameters)
 
     board_led_delay = 1000;  // normal process
 
-    //int16_t ipar16 = 0;
-    //int16_t num = 0;
-    uint16_t tmp = 0;
     EventBits_t uxBits;
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
@@ -464,17 +435,20 @@ static void prvMainTask(void *pvParameters)
                 }
 
                 uint8_t n_params = get_fields(fields);
+
                 if (fl_js && (n_params > 0))  // есть команда и параметры
                 {
-                    // обработка команд
                     parsed = false;
-                    if (strstr(tag, jsp_pause)) // PAUSE
+                    // проверка наличия и обработка команд
+
+                    // PAUSE
+                    if (strstr(tag, jsp_pause))
                     {
-                        put_to_cmd_queue(PAUSE, atoi(jparams[0]));
+                        put_to_cmd_queue(PAUSE, (uint16_t)atoi(jparams[0]));
                         parsed = true;
                     }
-
-                    if ( !parsed && strstr(tag, jsp_pwroff)) // POWER_OFF
+                    // POWER_OFF
+                    if ( !parsed && strstr(tag, jsp_pwroff))
                     {
                         parsed = true;
                         if (strstr(jparams[0], js_true))
@@ -490,8 +464,8 @@ static void prvMainTask(void *pvParameters)
                             put_to_cmd_queue(POWER_OFF, 0);
                         }
                     }
-
-                    if ( !parsed && strstr(tag, jsp_stop)) // STOP_ALL
+                    // STOP_ALL
+                    if ( !parsed && strstr(tag, jsp_stop))
                     {
                         parsed = true;
                         if (strstr(jparams[0], js_true))
@@ -508,13 +482,13 @@ static void prvMainTask(void *pvParameters)
                             put_to_cmd_queue(STOP_ALL, 0);
                         }
                     }
-
-                    if ( !parsed && strstr(tag, jsp_mot)) // MOT_STOP,UP_DOWN,RIGHT,LEFT,SRAIGHT
+                    //  MOT_STOP, MOT_UP_DOWN, MOT_RIGHT, MOT_LEFT, MOT_STRAIGHT, MOT_PAUSE
+                    if ( !parsed && strstr(tag, jsp_mot))
                     {
                         parsed = true;
                         if (n_params == 2)  // 2 параметра - f, b, p
                         {
-                            put_motors_cmd(jparams[0][1], atoi(jparams[1]));
+                            put_motors_cmd(jparams[0][1], (int16_t)atoi(jparams[1]));
                         }
                         else if (n_params == 1)  // 1 параметр - l,r,n,s
                         {
@@ -522,12 +496,11 @@ static void prvMainTask(void *pvParameters)
                         }
 
                     }
-
-                    if ( !parsed && strstr(tag, jsp_st)) //ST_NULL,STOP,CONT,CONT_STOP,RET
+                    //  ST_UP_DOWN, ST_NULL, ST_NULL_FAST, ST_STOP, ST_CONT_LEFT,
+                    //  ST_CONT_RIGHT, ST_CONT_STOP, ST_RET, ST_AXLE, ST_PAUSE
+                    if ( !parsed && strstr(tag, jsp_st))
                     {
                         parsed = true;
-
-
                         if (n_params == 2)  // 2 параметра - h,n,s,l,r
                         {
                             put_stepp_cmd((uint8_t)atoi(jparams[1]), jparams[0][1], 0);                            
@@ -535,26 +508,26 @@ static void prvMainTask(void *pvParameters)
                         else if (n_params == 3)  // 3 параметра - a,p
                         {
                             put_stepp_cmd((uint8_t)atoi(jparams[1]), jparams[0][1], 
-                                (uint16_t)atoi(jparams[2]));                            
+                                (int16_t)atoi(jparams[2]));                            
                         }
                     }
-
-                    if ( !parsed && strstr(tag, jsp_led)) // LEDS_MOD
+                    //  LED0_MOD, LED1_MOD, LED2_MOD, LED3_MOD, LEDS_PAUSE
+                    if ( !parsed && strstr(tag, jsp_led))
                     {
                         parsed = true;
                         put_leds_cmd(jparams[0][1], (uint16_t)atoi(jparams[1]));
                     }
-
-                    if ( !parsed && strstr(tag, jsp_servo)) // SERVO_SET, PAUSE
+                    // // SERVO_SET, SERVO_PAUSE
+                    if ( !parsed && strstr(tag, jsp_servo))
                     {
                         parsed = true;
                         put_servo_cmd(jparams[0][1], (uint16_t)atoi(jparams[1]));
                     }
-                    /*
-                    if ( !parsed && strstr(tag, jsp_dist)) // DIST_SHOT, PAUSE
+                    // CNT_OFF, CNT_ON_MS, CNT_ON_STEPS                    
+                    if ( !parsed && strstr(tag, jsp_dist))
                     {
                         parsed = true;
-                        tmp = NO_COMMAND;
+                        uint16_t tmp = NO_COMMAND;
                         switch (jparams[0][1])
                         {
                             case 'm':       // в милисекундах
@@ -571,30 +544,25 @@ static void prvMainTask(void *pvParameters)
                         }
                         put_to_cmd_queue(tmp, 0);
                     }
-
+                    //  ECHO_SHOT, ECHO_PAUSE
                     if ( !parsed && strstr(tag, jsp_echo)) // ECHO_ONE, PAUSE
                     {
                         parsed = true;
-                        put_echo_cmd(jparams[0][1], (uint16_t)atoi(jparams[1]));
+                        put_echo_cmd(jparams[0][1], (int16_t)atoi(jparams[1]));
                     }
-                    */
-
 				}
 			}
 			// был пакет от пульта
 	    	xLastWakeTime = xTaskGetTickCount();
-			//nocmd_count = 0;// был пакет от пульта
-		}       // end JSON
-		else
+		} // end JSON
+		else // не было JSON пакета
         {
-        	//nocmd_count++;
 			TickType_t xLastWakeTimeNow = xTaskGetTickCount();        	
-            //if (nocmd_count > WAIT_FOR_PACK)        // долго не было пакетов
-            if ((xLastWakeTimeNow - xLastWakeTime) > WAIT_FOR_PACK)        // долго не было пакетов
+            if ((xLastWakeTimeNow - xLastWakeTime) > WAIT_FOR_PACK)
             {
-				//nocmd_count = 0;
+                // долго не было пакетов от пульта - останавливаем все
 				xLastWakeTime = xLastWakeTimeNow;
-                put_to_cmd_queue(STOP_ALL, 0);  // останавливаем все
+                put_to_cmd_queue(STOP_ALL, 0);
 			}
 		}
 
@@ -881,7 +849,7 @@ static void prvCmdMotTask(void *pvParameters)
 					}
                     set_motor_value(3, item.param, item.param);
 				}
-                motors.pre_value = item.param;
+                motors.dst_value = item.param;
                 motors.gear = item.param;
                 break;
 			case MOT_LEFT:
@@ -890,7 +858,7 @@ static void prvCmdMotTask(void *pvParameters)
                 case MOTOR_LEFT:
                 	break;
 				case MOTOR_STOPPED:
-                	motors.pre_value = MOTOR_GEAR0;
+                	motors.dst_value = MOTOR_GEAR0;
                     motors.state = MOTOR_LEFT;
                     set_motor_value(3, -MOTOR_GEAR2, MOTOR_GEAR2);
                     vTaskDelay(pdMS_TO_TICKS(MOTOR_START_TIME));
@@ -900,7 +868,7 @@ static void prvCmdMotTask(void *pvParameters)
                 	set_motor_value(3, 0, 0);       // стопоба
                     vTaskDelay(pdMS_TO_TICKS(20));
 					motors.state = MOTOR_LEFT;
-                    set_motor_value(3, motors.pre_value, 0);
+                    set_motor_value(3, motors.dst_value, 0);
                     break;
 				default:
                 	motors.state = MOTOR_LEFT;
@@ -913,7 +881,7 @@ static void prvCmdMotTask(void *pvParameters)
             	case MOTOR_RIGHT:
                 	break;
 				case MOTOR_STOPPED:
-                	motors.pre_value = MOTOR_GEAR0;
+                	motors.dst_value = MOTOR_GEAR0;
                     motors.state = MOTOR_RIGHT;
                     set_motor_value(3, MOTOR_GEAR2, -MOTOR_GEAR2);
                     vTaskDelay(pdMS_TO_TICKS(MOTOR_START_TIME));
@@ -923,7 +891,7 @@ static void prvCmdMotTask(void *pvParameters)
                 	set_motor_value(3, 0, 0);       // стопоба
                     vTaskDelay(pdMS_TO_TICKS(20));
 					motors.state = MOTOR_RIGHT;
-                    set_motor_value(3, 0, motors.pre_value);
+                    set_motor_value(3, 0, motors.dst_value);
                     break;
 				default:
                 	motors.state = MOTOR_RIGHT;
@@ -931,15 +899,15 @@ static void prvCmdMotTask(void *pvParameters)
                 }
                 break;
 			case MOT_STRAIGHT:      // отмена поворота
-            	if (motors.pre_value == 0)
+            	if (motors.dst_value == 0)
                 {
                 	motors.state = MOTOR_STOPPED;
                     set_motor_value(3, 0, 0);
 				}
                 else
                 {
-                	set_motor_value(3, motors.pre_value, motors.pre_value);
-                    if (motors.pre_value > 0)
+                	set_motor_value(3, motors.dst_value, motors.dst_value);
+                    if (motors.dst_value > 0)
                     {
                     	motors.state = MOTOR_UP;
                     }
@@ -1013,7 +981,7 @@ static void prvCmdServoTask(void *pvParameters)
 	}
 }
 
-static void prvCmdDistTask(void *pvParameters)
+static void prvCmdEchoTask(void *pvParameters)
 {
     ( void ) pvParameters;
 
@@ -1026,9 +994,9 @@ static void prvCmdDistTask(void *pvParameters)
 			taskYIELD();
 		}
 		// есть ли очередная команда?
-        if ( xQueueReceive( xCmdDistQueue, &item, 0 ) == pdPASS )
+        if ( xQueueReceive( xCmdEchoQueue, &item, 0 ) == pdPASS )
         {
-        	if (item.cmd == DIST_SHOT)
+        	if (item.cmd == ECHO_SHOT)
             {
                 uint16_t vv = echo_one_shot();
                 if (vv > 38)
@@ -1037,12 +1005,11 @@ static void prvCmdDistTask(void *pvParameters)
                 }
                 else
                 {
-					calc_dist(echo_count);
+					calc_echo_dist(echo_count);
 				}
-                //esensor.checked = false;
-                xEventGroupSetBits(xEventGroupDev, dev_DIST_BIT);
+                xEventGroupSetBits(xEventGroupDev, dev_ECHO_BIT);
 			}
-            else if (item.cmd == DIST_PAUSE)
+            else if (item.cmd == ECHO_PAUSE)
             {
                 running_delay(item.param, cnt_status);
             }
@@ -1260,11 +1227,11 @@ void check_states(void)
        	lenCmdServoQueue = tmp;
 	}
     IF_STQ_AVAIL(1);
-	tmp = uxQueueMessagesWaiting(xCmdDistQueue);
-    if (tmp != lenCmdDistQueue)
+	tmp = uxQueueMessagesWaiting(xCmdEchoQueue);
+    if (tmp != lenCmdEchoQueue)
     {
-    	push_state(STATE_PACK_QUEUE_DIST, (uint8_t)tmp);
-       	lenCmdDistQueue = tmp;
+    	push_state(STATE_PACK_QUEUE_ECHO, (uint8_t)tmp);
+       	lenCmdEchoQueue = tmp;
 	}
     IF_STQ_AVAIL(1);
 	tmp = uxQueueMessagesWaiting(xCmdLedsQueue);
@@ -1320,11 +1287,11 @@ void check_states(void)
 		push_state(STATE_PACK_SERVO, 0);
    		xEventGroupClearBits(xEventGroupDev, dev_SERVO_BIT);
 	}
-	if ( (uxBits & dev_DIST_BIT) != 0 )
+	if ( (uxBits & dev_ECHO_BIT) != 0 )
 	{
         IF_STQ_AVAIL(1);
-		push_state(STATE_PACK_DIST, 0);
-   		xEventGroupClearBits(xEventGroupDev, dev_DIST_BIT);
+		push_state(STATE_PACK_ECHO, 0);
+   		xEventGroupClearBits(xEventGroupDev, dev_ECHO_BIT);
 	}
 	
 	evTmp = dev_ADC0_BIT;
@@ -1406,8 +1373,8 @@ bool push_state(uint8_t mstate, uint8_t num)
     {
     	strcat(pack, js_ms);
         strcat(pack, js_delim);
-        strcat(pack, js_lbr);   // [
-        switch (motors.state)   // статус
+        strcat(pack, js_lbr);                   // [
+        switch (motors.state)                   // статус
         {
         case MOTOR_STOPPED:
         	strcat(pack, js_s);
@@ -1427,16 +1394,30 @@ bool push_state(uint8_t mstate, uint8_t num)
 		default:
         	strcat(pack, js_a); // MOTOR_ALARM
 		}
-        strcat(pack, js_coma);                  // ,
-        strcat(pack, itoa(motors.pre_value, 10));
-        // заданная скорость
-        strcat(pack, js_coma);                  // ,
-        strcat(pack, itoa(motors.value1, 10));
-		// скорость ДПТ1
-        strcat(pack, js_coma);                  // ,
-        strcat(pack, itoa(motors.value2, 10));
-		// скорость ДПТ2
-        strcat(pack, js_rbr);                   // ]
+        strcat(pack, js_coma);
+        // отрицательные значения скоростей передаются 
+        //  положительными значениями: abs(v) + 4
+        int8_t tv = motors.dst_value;
+        if (tv < 0)
+        {
+            tv = abs(tv) + 4;
+        }
+        strcat(pack, itoa(tv, 10));  // заданная скорость
+        strcat(pack, js_coma);      // ,
+        tv = motors.value1;
+        if (tv < 0)
+        {
+            tv = abs(tv) + 4;
+        }
+        strcat(pack, itoa(tv, 10));     // скорость ДПТ1
+        strcat(pack, js_coma);                     // ,
+        tv = motors.value2;
+        if (tv < 0)
+        {
+            tv = abs(tv) + 4;
+        }
+        strcat(pack, itoa(tv, 10));     // скорость ДПТ2
+        strcat(pack, js_rbr);                      // ]
 	}
     else if ( mstate == STATE_PACK_STEPP)
     {
@@ -1529,11 +1510,11 @@ bool push_state(uint8_t mstate, uint8_t num)
         // adc value
         strcat(pack, js_rbr);                   // ]
 	}
-    else if ( mstate == STATE_PACK_DIST)
+    else if ( mstate == STATE_PACK_ECHO)
     {
-    	strcat(pack, js_dist);
+    	strcat(pack, js_echo);
         strcat(pack, js_delim);
-        strcat(pack, itoa(esensor.value, 10));		// dist value
+        strcat(pack, itoa(esensor.value, 10));		// echo value
     }
     else if ( mstate == STATE_PACK_SERVO)
 	{
@@ -1571,9 +1552,9 @@ bool push_state(uint8_t mstate, uint8_t num)
         strcat(pack, js_delim);
         strcat(pack, itoa(num, 10));                            // наличие команд в очереди
 	}
-    else if ( mstate == STATE_PACK_QUEUE_DIST)
+    else if ( mstate == STATE_PACK_QUEUE_ECHO)
     {
-    	strcat(pack, js_qdist);
+    	strcat(pack, js_qecho);
         strcat(pack, js_delim);
         strcat(pack, itoa(num, 10));                            // наличие команд в очереди
 	}
@@ -1656,6 +1637,7 @@ void put_motors_cmd(char command, int16_t iparam)
         break;
 	case 'p':
     	item.cmd = MOT_PAUSE;
+        item.param = iparam;
         break;
 	default:        //case 's':
     	item.cmd = MOT_STOP;
@@ -1800,40 +1782,40 @@ void put_servo_cmd(char command, int16_t iparam)
 	}
 }
 
-void put_dist_cmd(char command, int16_t iparam)
+void put_echo_cmd(char command, int16_t iparam)
 {
     ncommand_item item;
 
     if (command == 'p')     // PAUSE
     {
-    	item.cmd = DIST_PAUSE;
+    	item.cmd = ECHO_PAUSE;
         item.param = iparam;
 	}
     else
     {
-    	item.cmd = DIST_SHOT;
+    	item.cmd = ECHO_SHOT;
         item.param = 0;
 	}
 
     uint8_t cc = 5;
-    while ( (uxQueueSpacesAvailable(xCmdDistQueue) == 0) && (cc-- > 0) ) //ждем до 100mS
+    while ( (uxQueueSpacesAvailable(xCmdEchoQueue) == 0) && (cc-- > 0) ) //ждем до 100mS
 	{
     	vTaskDelay(pdMS_TO_TICKS(20));
 	}
     if (cc > 0)
     {
-    	xQueueSend(xCmdDistQueue, &item, pdMS_TO_TICKS(50));
+    	xQueueSend(xCmdEchoQueue, &item, pdMS_TO_TICKS(50));
 	}
 }
 
-void calc_dist(uint16_t count)
+void calc_echo_dist(uint16_t count)
 {
     esensor.value = count / 58;     // расстояние в см
     if (esensor.value > 400)        // больше 4-х метров - далеко
     {
         esensor.value = 2048;
     }
-    xEventGroupSetBits(xEventGroupDev, dev_DIST_BIT);
+    xEventGroupSetBits(xEventGroupDev, dev_ECHO_BIT);
 }
 
 void echo_pulse(void)
@@ -1864,7 +1846,7 @@ TickType_t echo_one_shot(void)
 // извлечение полей пакета в jparams
 uint8_t get_fields(char *fld)
 {
-    uint8_t ret = 0;
+    uint8_t cnt = 0;
     uint8_t multi = 1;
 
     char *pb = strchr(fld, '[');
@@ -1874,23 +1856,23 @@ uint8_t get_fields(char *fld)
         multi = 0;
     }
 
-    if (multi)
+    if (multi) // > 1 параметра
     {
-        *pe = '\0'; // ]
+        *pe = '\0'; // укорачиваем строку - убираем "]"
         char *token = strtok((pb + 1), ",");
         if (token != NULL)
         {
-            ret = 1;
+            cnt = 1;
             strcpy(jparams[0], token);
             token = strtok(NULL, ",");
             if (token != NULL)
             {
-                ret = 2;
+                cnt = 2;
                 strcpy(jparams[1], token);
                 token = strtok(NULL, ",");
                 if (token != NULL)
                 {
-                    ret = 3;
+                    cnt = 3;
                     strcpy(jparams[2], token);
                 }
                 else
@@ -1913,10 +1895,10 @@ uint8_t get_fields(char *fld)
         strcpy(jparams[0], fld);
         jparams[1][0] = '\0';
         jparams[2][0] = '\0';
-        ret = 1;
+        cnt = 1;
     }
 
-    return ret;
+    return cnt; // количество извлеченных  параметров
 }
 
 // вычисление основных параметров по результатам цикла АЦП
@@ -1985,6 +1967,7 @@ void ADC_calc(void)
     }	
 }	
 
+// обеспечение паузы в mS или импульсах датчика оборотов колеса
 void running_delay(uint32_t lasting, uint8_t c_status)
 {
 	uint32_t st_new;
@@ -1993,7 +1976,7 @@ void running_delay(uint32_t lasting, uint8_t c_status)
     if ( c_status == CNT_ON_STEPS )
     {
     	st_new = ir_count + lasting;
-        t_max = (int32_t)(lasting * MS_PER_STEP);       // максимальноевремя для прохода
+        t_max = (int32_t)(lasting * MS_PER_STEP); // максимальное время в mS - чтобы не зависнуть
         // цикл до получеиия нужного количества шагов или до истечения времени
         while ((ir_count < st_new) && (t_max > 0))
         {
@@ -2007,6 +1990,7 @@ void running_delay(uint32_t lasting, uint8_t c_status)
 	}
 }
 
+// в стандарте C99 этой функции нет, а sprinf слишком тяжелая
 char * itoa(int val, int base) {
     static char buf[32] = {0};
 
@@ -2045,19 +2029,12 @@ static void clock_setup(void)
 {
     rcc_clock_setup_in_hse_8mhz_out_72mhz();
 
-    /* Enable clocks for GPIOA clock (for GPIO_USART1_TX) and USART1. */
     rcc_periph_clock_enable(RCC_GPIOA);
     rcc_periph_clock_enable(RCC_GPIOB);
     rcc_periph_clock_enable(RCC_GPIOC);
     rcc_periph_clock_enable(RCC_AFIO);
-
-    // JTAG-DP Disabled and SW-DP Enabled:
-    AFIO_MAPR &= ~AFIO_MAPR_SWJ_MASK;               // 0 to 24..26
-    AFIO_MAPR |= AFIO_MAPR_SWJ_CFG_JTAG_OFF_SW_ON;  // (0x2 << 24) - 1 to 25
-
     rcc_periph_clock_enable(RCC_USART1);
     rcc_periph_clock_enable(RCC_DMA1);
-
 }
 
 static void systickSetup()
@@ -2078,7 +2055,13 @@ static void systickSetup()
 /*----------------------------- GPIO ------------------------*/
 
 static void gpio_setup(void)
-{
+{    
+    /* Освобождаем ножки PA15, PB3, PB4. Оставляем для отладки
+       только SWDIO и SWCLK - для ST-Link V2 вполне достаточно. 
+      JTAG-DP Disabled and SW-DP Enabled: */
+    AFIO_MAPR &= ~AFIO_MAPR_SWJ_MASK;               // 0 to 24..26
+    AFIO_MAPR |= AFIO_MAPR_SWJ_CFG_JTAG_OFF_SW_ON;  // (0x2 << 24) - 1 to 25
+
     // BOARD LED
     gpio_clear(GPIOC, GPIO13);
     gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
