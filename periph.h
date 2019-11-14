@@ -147,10 +147,17 @@
 #define PWM_MAX_VALUE	511
 
 #define MOTOR_START_TIME	50	// время на трогание мотора, mS
+/*
 #define MOTOR_GEAR0			0
 #define MOTOR_GEAR1			16
 #define MOTOR_GEAR2			24
 #define MOTOR_GEAR3			32
+*/
+#define	GEAR_0	0
+#define	GEAR_1	1
+#define	GEAR_2	2
+#define	GEAR_3	3
+
 
 // Максимальное время отутствия пакетов от пульта в mS 
 // - при достижениии формируется STOP_ALL
@@ -260,12 +267,6 @@ typedef struct _ncommand_item {
 	int16_t param;
 } ncommand_item;
 
-
-#define	GEAR_0	0
-#define	GEAR_1	1
-#define	GEAR_2	2
-#define	GEAR_3	3
-
 enum {
         MOTOR_STOPPED = 0,
         MOTOR_UP,
@@ -338,7 +339,7 @@ typedef struct _servo_drive {
 
 void vApplicationTickHook( void );
 
-void set_motor_value(uint8_t mmask, int8_t value0, int8_t value1);
+void set_motor_value(uint8_t mmask, uint8_t setgear, int8_t value0, int8_t value1);
 void stepp_stop(uint8_t stnum);
 void set_servo_angle(uint8_t angle);
 void servo_stop(void);

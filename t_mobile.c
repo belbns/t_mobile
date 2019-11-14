@@ -39,6 +39,8 @@ but the test should work on the majority of STM32 based boards.
 extern void initialise_monitor_handles(void);
 #endif
 
+const uint8_t motor_gear[] = {0, 16, 24, 32};
+
 static uint8_t iBleBuf = 0;
 static char cBleInBuf[BLE_PACK_SIZE + 4];
 static char cReceivedPack[BLE_PACK_SIZE + 4];
@@ -766,7 +768,7 @@ static void prvCmdTask(void *pvParameters)
 					}
 				}
             	// останов моторов
-            	set_motor_value(3, MOTOR_GEAR0, MOTOR_GEAR0);
+            	set_motor_value(3, GEAR_0, motor_gear[GEAR_0], motor_gear[GEAR_0]);
             	motors.gear = GEAR_0;
             	// серво в центр
             	set_servo_angle(90);
@@ -819,18 +821,17 @@ static void prvCmdMotTask(void *pvParameters)
             	running_delay(item.param, cnt_status);
                 break;
 			case MOT_STOP:  // останов моторов
-            	set_motor_value(3, MOTOR_GEAR0, MOTOR_GEAR0);
-                motors.gear = GEAR_0;
+            	set_motor_value(3, GEAR_0, motor_gear[GEAR_0], motor_gear[GEAR_0]);
                 break;
 			case MOT_UP_DOWN:
 				// если поворот - статус не меняется, а скоростьможет меняться
                 if (motors.state == MOTOR_LEFT)
                 {
-                	set_motor_value(2, 0, item.param);
+                	set_motor_value(2, item.param, motor_gear[GEAR_0], motor_gear[item.param]);
 				}
                 else if (motors.state == MOTOR_RIGHT)
                 {
-                	set_motor_value(1, item.param, 0);
+                	set_motor_value(1, item.param, motor_gear[item.param], motor_gear[GEAR_0]);
 				}
                 else
                 {
@@ -839,18 +840,17 @@ static void prvCmdMotTask(void *pvParameters)
                     {
                     	if (item.param > 0)
                         {
-                        	set_motor_value(3, MOTOR_GEAR2, MOTOR_GEAR2);
+                        	set_motor_value(3, GEAR_2, motor_gear[GEAR_2], motor_gear[GEAR_2]);
 						}
                         else
                         {
-							set_motor_value(3, -MOTOR_GEAR2, -MOTOR_GEAR2);
+							set_motor_value(3, -GEAR_2, -motor_gear[GEAR_2], -motor_gear[GEAR_2]);
 						}
                         vTaskDelay(pdMS_TO_TICKS(MOTOR_START_TIME));
 					}
-                    set_motor_value(3, item.param, item.param);
+                    set_motor_value(3, item.param, motor_gear[item.param], motor_gear[item.param]);
 				}
                 motors.dst_value = item.param;
-                motors.gear = item.param;
                 break;
 			case MOT_LEFT:
             	switch (motors.state)
@@ -858,21 +858,21 @@ static void prvCmdMotTask(void *pvParameters)
                 case MOTOR_LEFT:
                 	break;
 				case MOTOR_STOPPED:
-                	motors.dst_value = MOTOR_GEAR0;
+                	motors.dst_value = motor_gear[GEAR_0];
                     motors.state = MOTOR_LEFT;
-                    set_motor_value(3, -MOTOR_GEAR2, MOTOR_GEAR2);
+                    set_motor_value(3, -GEAR_2, -motor_gear[GEAR_2], motor_gear[GEAR_2]);
                     vTaskDelay(pdMS_TO_TICKS(MOTOR_START_TIME));
-                    set_motor_value(3, -MOTOR_GEAR1, MOTOR_GEAR1);
+                    set_motor_value(3, -GEAR_1, -motor_gear[GEAR_1], motor_gear[GEAR_1]);
 					break;
                 case MOTOR_RIGHT:
-                	set_motor_value(3, 0, 0);       // стопоба
+                	set_motor_value(3, GEAR_0, motor_gear[GEAR_0], motor_gear[GEAR_0]); // стоп оба
                     vTaskDelay(pdMS_TO_TICKS(20));
 					motors.state = MOTOR_LEFT;
-                    set_motor_value(3, motors.dst_value, 0);
+                    set_motor_value(3, 10, motors_gear[motors.dst_value], 0);
                     break;
 				default:
                 	motors.state = MOTOR_LEFT;
-                    set_motor_value(1, 0, 0);       // стоплевый
+                    set_motor_value(1, 10, motor_gear[GEAR_0], motor_gear[GEAR_0]); // стоп левый
 				}
                 break;
 			case MOT_RIGHT:
@@ -881,17 +881,17 @@ static void prvCmdMotTask(void *pvParameters)
             	case MOTOR_RIGHT:
                 	break;
 				case MOTOR_STOPPED:
-                	motors.dst_value = MOTOR_GEAR0;
+                	motors.dst_value = motor_gear[motor_gear[GEAR_0]];
                     motors.state = MOTOR_RIGHT;
-                    set_motor_value(3, MOTOR_GEAR2, -MOTOR_GEAR2);
+                    set_motor_value(3, 10, motor_gear[GEAR_2], -motor_gear[GEAR_2]);
                     vTaskDelay(pdMS_TO_TICKS(MOTOR_START_TIME));
-					set_motor_value(3, MOTOR_GEAR1, -MOTOR_GEAR1);
+					set_motor_value(3, 10, motor_gear[GEAR_1], -motor_gear[GEAR_1]);
 					break;
 				case MOTOR_LEFT:
-                	set_motor_value(3, 0, 0);       // стопоба
+                	set_motor_value(3, 10, motor_gear[GEAR_0], motor_gear[GEAR_0]); // стоп оба
                     vTaskDelay(pdMS_TO_TICKS(20));
 					motors.state = MOTOR_RIGHT;
-                    set_motor_value(3, 0, motors.dst_value);
+                    set_motor_value(3, 10, motor_gear[GEAR_0], motors.dst_value);
                     break;
 				default:
                 	motors.state = MOTOR_RIGHT;
@@ -1601,21 +1601,16 @@ void put_to_cmd_queue(uint16_t cmd, int16_t iparam)
 void put_motors_cmd(char command, int16_t iparam)
 {
 	ncommand_item item;
-                                
-    switch (iparam)
+
+    if ((iparam >= 0) && (iparam < 4))
     {
-    case 1:
-    	item.param = MOTOR_GEAR1;
-        break;
-	case 2:
-    	item.param = MOTOR_GEAR2;
-        break;
-	case 3:
-    	item.param = MOTOR_GEAR3;
-        break;
-	default:
-    	item.param = MOTOR_GEAR0;
-	}
+        item.param = motor_gear[iparam];
+    }
+    else
+    {
+        item.param = motor_gear[GEAR_0];  
+    }
+
 
     switch (command)
     {       

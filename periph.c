@@ -165,10 +165,16 @@ void vApplicationTickHook( void )
     Для ДПТ1 используются каналы TIM_OC1 и TIM_OC2,
     для ДПТ2 - TIM_OC3 и TIM_OC4.
 */
-void set_motor_value(uint8_t mmask, int8_t value0, int8_t value1)
+void set_motor_value(uint8_t mmask, uint8_t setgear, int8_t value0, int8_t value1)
 {
 	uint16_t pulse0 = 0;
 	uint16_t pulse1 = 0;
+
+    if (abs(setgear) <= GEAR_3) // если значение > GEAR_3 - не менять
+    {
+        motors.gear = setgear;
+    }
+
 
     if ( mmask & 1 )
     {
