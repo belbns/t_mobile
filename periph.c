@@ -31,25 +31,26 @@ extern EventGroupHandle_t xEventGroupADC;
 extern EventGroupHandle_t xEventGroupDev;
 extern SemaphoreHandle_t xSteppMutex[2]; 
 
+const uint8_t motor_gear[] = {K_GEAR0, K_GEAR1, K_GEAR2, K_GEAR3};
+
 motor_ctrl motors = {
-    .state = MOTOR_OFF, .gear = GEAR_0, .value1 = 0, .value2 = 0,
-	.dst_value = 0, .need_update1 = 0, .need_update2 = 0   //, .checked = false
+    .state = MOTOR_OFF, .curr_gear = GEAR_0, .gear1 = GEAR_0, .gear2 = GEAR_0
 };
 
 stepper stepp[2] = {
-    { STEP_OFF, 0, 0, 0, 0, 0, 0/*, false*/ },
-	{ STEP_OFF, 0, 0, 0, 0, 0, 0/*, false*/ }
+    { STEP_OFF, 0, 0, 0, 0, 0, 0},
+	{ STEP_OFF, 0, 0, 0, 0, 0, 0}
 };
 
 
 mob_leds leds[4] = {
-    { .port = LED0_PORT, .pin = LED0_PIN, .on = 0, .mode = LED_OFF/*, .checked = false*/},
-	{ .port = LED1_PORT, .pin = LED1_PIN, .on = 0, .mode = LED_OFF/*, .checked = false*/},
-	{ .port = LED2_PORT, .pin = LED2_PIN, .on = 0, .mode = LED_OFF/*, .checked = false*/},
-	{ .port = LED3_PORT, .pin = LED3_PIN, .on = 0, .mode = LED_OFF/*, .checked = false*/},
+    { .port = LED0_PORT, .pin = LED0_PIN, .on = 0, .mode = LED_OFF},
+	{ .port = LED1_PORT, .pin = LED1_PIN, .on = 0, .mode = LED_OFF},
+	{ .port = LED2_PORT, .pin = LED2_PIN, .on = 0, .mode = LED_OFF},
+	{ .port = LED3_PORT, .pin = LED3_PIN, .on = 0, .mode = LED_OFF},
 };
 
-servo_drive servo = {SERVO_ON, 90, 90/*, false*/};
+servo_drive servo = {SERVO_ON, 90, 90};
 
 uint8_t axle_stepper = AXLE_STEPPER;	// номер ШД эхо-локатора
 
@@ -165,14 +166,16 @@ void vApplicationTickHook( void )
     Для ДПТ1 используются каналы TIM_OC1 и TIM_OC2,
     для ДПТ2 - TIM_OC3 и TIM_OC4.
 */
-void set_motor_value(uint8_t mmask, uint8_t setgear, int8_t value0, int8_t value1)
+void set_motor_value(uint8_t mmask, int8_t sgear, int8_t sgear1, int8_t sgear2)
 {
-	uint16_t pulse0 = 0;
 	uint16_t pulse1 = 0;
+	uint16_t pulse2 = 0;
+    uint8_t need_update1 = 0;
+    uint8_t need_update2 = 0;
 
-    if (abs(setgear) <= GEAR_3) // если значение > GEAR_3 - не менять
+    if (abs(sgear) != GEAR_NOP) // GEAR_NOP - не менять
     {
-        motors.gear = setgear;
+        motors.curr_gear = sgear;
     }
 
 
@@ -182,23 +185,20 @@ void set_motor_value(uint8_t mmask, uint8_t setgear, int8_t value0, int8_t value
         timer_set_oc_value(TIM3, TIM_OC1, 0);
         timer_set_oc_value(TIM3, TIM_OC2, 0);
 
-    	if (value0 != 0)
+    	if (sgear1 != 0)
         {
-        	pulse0 = abs(value0) & 0x3F;	// каждая 1 от пульта = 16 ступеней
-        	pulse0 = pulse0 << 4;			// * 16
-            if (pulse0 > PWM_MAX_VALUE)
-            	pulse0 = PWM_MAX_VALUE;
+        	pulse1 = ((motor_gear[abs(sgear1)]) << 4) & 0x3F;	// K_GEARx * 16
+            if (pulse1 > PWM_MAX_VALUE)
+            {
+            	pulse1 = PWM_MAX_VALUE;
+            }
         }
     	else
     	{
-        	pulse0 = 0;
+        	pulse1 = 0;
     	}
-    	motors.need_update1 = 1;
-        motors.value1 = value0;
-    }
-    else
-    {
-    	motors.need_update1 = 0;
+    	need_update1 = 1;
+        motors.gear1 = sgear1;
     }
 
     if ( mmask & 2 )
@@ -207,61 +207,55 @@ void set_motor_value(uint8_t mmask, uint8_t setgear, int8_t value0, int8_t value
         timer_set_oc_value(TIM3, TIM_OC3, 0);
         timer_set_oc_value(TIM3, TIM_OC4, 0);
 
-    	if (value1 != 0)
+    	if (sgear2 != 0)
         {
-        	pulse1 = abs(value1) & 0x3F;	// каждая 1 от пульта = 16 ступеней
-        	pulse1 = pulse1 << 4;			// * 16
-            if (pulse1 > PWM_MAX_VALUE)
-            	pulse1 = PWM_MAX_VALUE;
+            pulse2 = ((motor_gear[abs(sgear2)]) << 4) & 0x3F;   // K_GEARx * 16
+            if (pulse2 > PWM_MAX_VALUE)
+            {
+            	pulse2 = PWM_MAX_VALUE;
+            }
         }
     	else
     	{
-        	pulse1 = 0;
+        	pulse2 = 0;
     	}
-    	motors.need_update2 = 1;
-        motors.value2 = value1;
-    }
-    else
-    {
-    	motors.need_update2 = 0;
+    	need_update2 = 1;
+        motors.gear2 = sgear2;
     }
 
-    if (motors.need_update1)
+    if (need_update1)
     {
-        if (value0 > 0)
+        if (sgear1 > 0)
         {
         	// ждем 0 на TIM3->CCR2
             while (gpio_get(MOTOR1_PORT, MOTOR1_PIN2) != 0) ;
-            timer_set_oc_value(TIM3, TIM_OC1, pulse0);
+            timer_set_oc_value(TIM3, TIM_OC1, pulse1);
         }
-        else if (value0 < 0)
+        else if (sgear1 < 0)
         {
         	// ждем 0 на TIM3->CCR1
             while (gpio_get(MOTOR1_PORT, MOTOR1_PIN1) != 0) ;
-            timer_set_oc_value(TIM3, TIM_OC2, pulse0);
+            timer_set_oc_value(TIM3, TIM_OC2, pulse1);
         }
-        motors.need_update1 = 0;
     }
 
-    if (motors.need_update2)
+    if (need_update2)
     {
-        if (value1 > 0)
-        {
-        	// ждем 0 на TIM3->CCR3
-            while (gpio_get(MOTOR2_PORT, MOTOR2_PIN2) != 0) ;
-            timer_set_oc_value(TIM3, TIM_OC3, pulse1);
-        }
-        else if (value1 < 0)
+        if (sgear2 > 0)
         {
         	// ждем 0 на TIM3->CCR4
-            while (gpio_get(MOTOR2_PORT, MOTOR2_PIN1) != 0) ;
-            timer_set_oc_value(TIM3, TIM_OC4, pulse1);
+            while (gpio_get(MOTOR2_PORT, MOTOR2_PIN2) != 0) ;
+            timer_set_oc_value(TIM3, TIM_OC3, pulse2);
         }
-        motors.need_update2 = 0;
+        else if (sgear2 < 0)
+        {
+        	// ждем 0 на TIM3->CCR3
+            while (gpio_get(MOTOR2_PORT, MOTOR2_PIN1) != 0) ;
+            timer_set_oc_value(TIM3, TIM_OC4, pulse2);
+        }
     }
 
     xEventGroupSetBits(xEventGroupDev, dev_MOTORS_BIT);
-
 }
 
 void set_servo_angle(uint8_t angle)
@@ -357,8 +351,68 @@ void stepp_stop(uint8_t stnum)
 	}
 }
 
+// доводит положение ШД до точки 0/512, 
+// последующее движение возобновляется в vApplicationTickHook
+void stepp_start_cont(uint8_t stnum, uint8_t cmd)
+{
+    EventBits_t evStep = dev_STEPP1_BIT << stnum;   // если 1 -> dev_STEPP2_BIT
+
+    stepp[stnum].steps = stepp[stnum].steps & 7;
+    // ждем окончания движения
+    while ( (stepp[stnum].steps > 0) || stepp[stnum].last_step )
+    {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    stepp[stnum].mode = STEP_MAN_CONT;
+
+    uint32_t steps = 0;
+    // Вычисляем кол-во шагов до точки 0/512
+    if (stepp[stnum].angle_curr != 0)
+    {
+        if (stepp[stnum].angle_curr > 0)
+        {
+            if (cmd == ST_CONT_CCLK)
+            {
+                steps = (STEPPER_ANGLE_TURN - stepp[stnum].angle_curr) << 3;
+            }
+            else
+            {
+                steps = stepp[stnum].angle_curr << 3;
+            }
+        }
+        else
+        {
+            if (cmd == ST_CONT_CCLK)
+            {
+                steps = stepp[stnum].angle_curr << 3;
+            }
+            else
+            {
+                steps = (STEPPER_ANGLE_TURN - stepp[stnum].angle_curr) << 3;
+            }
+        }
+    }
+    else
+    {
+        steps = STEPPER_ANGLE_TURN;
+    }
+    if (cmd == ST_CONT_CCLK)
+    {
+        stepp[stnum].clockw = 0;
+    }
+    else
+    {
+        stepp[stnum].clockw = 1;
+    }
+    stepp[stnum].steps = steps;
+
+    xEventGroupSetBits(xEventGroupDev, evStep);
+}
+
+
 // процедура должна вызываться при захваченом xSteppMutex[stnum]
-void stepp_up_down(uint8_t stnum, int16_t sparam)
+void stepp_clk_cclk(uint8_t stnum, int16_t sparam)
 {
     EventBits_t evStep = dev_STEPP1_BIT << stnum;   // если 1 -> dev_STEPP2_BIT
 
@@ -458,7 +512,7 @@ void set_led(uint8_t num, uint8_t value)
 
 void stop_all(void)
 {
-	set_motor_value(3, 0, 0);
+	set_motor_value(3, GEAR_0, GEAR_0, GEAR_0);
 	stepp_stop(0);
 	stepp_stop(1);
 	servo_stop();

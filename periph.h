@@ -147,17 +147,13 @@
 #define PWM_MAX_VALUE	511
 
 #define MOTOR_START_TIME	50	// время на трогание мотора, mS
-/*
-#define MOTOR_GEAR0			0
-#define MOTOR_GEAR1			16
-#define MOTOR_GEAR2			24
-#define MOTOR_GEAR3			32
-*/
-#define	GEAR_0	0
-#define	GEAR_1	1
-#define	GEAR_2	2
-#define	GEAR_3	3
 
+// значения коэффициентов скоростей ДПТ
+// - при записи TIM_OCX таймера будут умножаться на 16
+#define K_GEAR0			0
+#define K_GEAR1			16
+#define K_GEAR2			24
+#define K_GEAR3			32
 
 // Максимальное время отутствия пакетов от пульта в mS 
 // - при достижениии формируется STOP_ALL
@@ -211,12 +207,12 @@ enum {
 
 // команды очереди ШД
 enum {
-	ST_UP_DOWN = 0,
+	ST_SET_ANGLE = 0,
 	ST_NULL,
 	ST_NULL_FAST,
 	ST_STOP,
-	ST_CONT_LEFT,
-	ST_CONT_RIGHT,
+	ST_CONT_CCLK,		// counterclockwise
+	ST_CONT_CLK,		// clockwise
 	ST_CONT_STOP,
 	ST_RET,
 	ST_AXLE,
@@ -252,20 +248,27 @@ enum {
 
 // команды общей очереди
 enum {
-	NO_COMMAND = 0,
-	PAUSE,		// пауза отдельной командой
-	POWER_OFF,
-	STOP_ALL,
-	CNT_SET_OFF,
-	CNT_SET_ON_MS,
-	CNT_SET_ON_STEPS,
-	CNT_RESET
+	CMD_NO = 0,
+	CMD_PAUSE,		// пауза отдельной командой
+	CMD_POWER_OFF,
+	CMD_STOP_ALL,
+	CMD_CNT_SET_ON_MS,
+	CMD_CNT_SET_ON_STEPS,
+	CMD_CNT_RESET
 };
 
 typedef struct _ncommand_item {
 	uint16_t cmd;
 	int16_t param;
 } ncommand_item;
+
+enum {
+	GEAR_0 = 0,
+	GEAR_1,
+	GEAR_2,
+	GEAR_3,
+	GEAR_NOP
+};
 
 enum {
         MOTOR_STOPPED = 0,
@@ -279,12 +282,11 @@ enum {
 
 typedef struct _motor_ctrl {
         uint8_t state;			// enum
-        int8_t gear;
-        int8_t value1;
-        int8_t value2;
-        int8_t dst_value;
-        uint8_t need_update1;
-        uint8_t need_update2;
+        int8_t curr_gear;
+        int8_t gear1;
+        int8_t gear2;
+//        uint8_t need_update1;
+//        uint8_t need_update2;
         //bool checked;
 } motor_ctrl;
 
@@ -339,12 +341,13 @@ typedef struct _servo_drive {
 
 void vApplicationTickHook( void );
 
-void set_motor_value(uint8_t mmask, uint8_t setgear, int8_t value0, int8_t value1);
+void set_motor_value(uint8_t mmask, int8_t sgear, int8_t sgear1, int8_t sgear2);
 void stepp_stop(uint8_t stnum);
 void set_servo_angle(uint8_t angle);
 void servo_stop(void);
 void stepp_to_null(uint8_t stnum, uint8_t fast);
-void stepp_up_down(uint8_t stnum, int16_t sparam);
+void stepp_start_cont(uint8_t stnum, uint8_t cmd);
+void stepp_clk_cclk(uint8_t stnum, int16_t sparam);
 void set_led(uint8_t num, uint8_t value);
 void stop_all(void);
 void power_off(void);
