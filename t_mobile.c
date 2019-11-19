@@ -2310,7 +2310,7 @@ static void tim3_setup(void)
     timer_enable_oc_preload(TIM3, TIM_OC1);
     timer_set_oc_mode(TIM3, TIM_OC1, TIM_OCM_PWM1);
     timer_set_oc_polarity_high(TIM3, TIM_OC1);
-    timer_set_oc_idle_state_set(TIM3, TIM_OC1);
+    timer_set_oc_idle_state_unset(TIM3, TIM_OC1);
     timer_set_oc_value(TIM3, TIM_OC1, 0);
     timer_set_oc_slow_mode(TIM3, TIM_OC1);
     timer_enable_oc_output(TIM3, TIM_OC1);
@@ -2318,7 +2318,7 @@ static void tim3_setup(void)
     timer_enable_oc_preload(TIM3, TIM_OC2);
     timer_set_oc_mode(TIM3, TIM_OC2, TIM_OCM_PWM1);
     timer_set_oc_polarity_high(TIM3, TIM_OC2);
-    timer_set_oc_idle_state_set(TIM3, TIM_OC2);
+    timer_set_oc_idle_state_unset(TIM3, TIM_OC2);
     timer_set_oc_value(TIM3, TIM_OC2, 0);
     timer_set_oc_slow_mode(TIM3, TIM_OC2);
     timer_enable_oc_output(TIM3, TIM_OC2);
@@ -2326,7 +2326,7 @@ static void tim3_setup(void)
     timer_enable_oc_preload(TIM3, TIM_OC3);
     timer_set_oc_mode(TIM3, TIM_OC3, TIM_OCM_PWM1);
     timer_set_oc_polarity_high(TIM3, TIM_OC3);
-    timer_set_oc_idle_state_set(TIM3, TIM_OC3);
+    timer_set_oc_idle_state_unset(TIM3, TIM_OC3);
     timer_set_oc_value(TIM3, TIM_OC3, 0);
     timer_set_oc_slow_mode(TIM3, TIM_OC3);
     timer_enable_oc_output(TIM3, TIM_OC3);
@@ -2334,7 +2334,7 @@ static void tim3_setup(void)
     timer_enable_oc_preload(TIM3, TIM_OC4);
     timer_set_oc_mode(TIM3, TIM_OC4, TIM_OCM_PWM1);
     timer_set_oc_polarity_high(TIM3, TIM_OC4);
-    timer_set_oc_idle_state_set(TIM3, TIM_OC4);
+    timer_set_oc_idle_state_unset(TIM3, TIM_OC4);
     timer_set_oc_value(TIM3, TIM_OC4, 0);
     timer_set_oc_slow_mode(TIM3, TIM_OC4);
     timer_enable_oc_output(TIM3, TIM_OC4);
