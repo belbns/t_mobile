@@ -34,7 +34,7 @@ extern SemaphoreHandle_t xSteppMutex[2];
 const uint8_t motor_gear[] = {K_GEAR0, K_GEAR1, K_GEAR2, K_GEAR3};
 
 motor_ctrl motors = {
-    .state = MOTOR_OFF, .curr_gear = GEAR_0, .gear1 = GEAR_0, .gear2 = GEAR_0
+    .state = MOTOR_STOPPED, .curr_gear = GEAR_0, .gear1 = GEAR_0, .gear2 = GEAR_0
 };
 
 stepper stepp[2] = {
@@ -260,19 +260,19 @@ void set_motor_value(uint8_t mmask, int8_t sgear, int8_t sgear1, int8_t sgear2)
 
 void set_servo_angle(uint8_t angle)
 {
-	if (angle <= 180)
-	{
-		servo.angle_prev = servo.angle;
-		servo.angle = angle;
-        timer_set_oc_value(TIM2, TIM_OC3, (uint16_t)(angle + SERVO_0GRAD));
-        xEventGroupSetBits(xEventGroupDev, dev_SERVO_BIT);        
-	}
+	servo.angle_prev = servo.angle;
+	servo.angle = angle;
+    // для серво 360 - правое положение, 180 - левое, т.е. зеркально от пульта,
+    // поэтому в таймер пишем 360 - angle
+    timer_set_oc_value(TIM2, TIM_OC3, (uint16_t)(SERVO_180GRAD - angle  - 1 + SERVO_SHIFT));
+
+    xEventGroupSetBits(xEventGroupDev, dev_SERVO_BIT);        
 }
 
 void servo_stop(void)
 {
 	servo.angle_prev = servo.angle;
-	servo.angle = SERVO_90GRAD;
+	servo.angle = 90;
     timer_set_oc_value(TIM2, TIM_OC3, (uint16_t)servo.angle);
     xEventGroupSetBits(xEventGroupDev, dev_SERVO_BIT);        
 }

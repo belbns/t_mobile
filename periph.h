@@ -31,14 +31,16 @@
 #define IR_COUNT_PORT		GPIOA
 
 // серво-привод - разъем P3
-#define SERVO_PIN			GPIO2	// выход таймера TIM2, CH3
+#define SERVO_PIN			GPIO2		// выход таймера TIM2, CH3
 #define SERVO_PORT			GPIOA
-#define SERVO_0GRAD			(18 - 1)
-#define SERVO_90GRAD		(27 - 1)
-#define SERVO_180GRAD		(36 - 1)
+// для серво 360 - правое положение, 180 - левое, т.е. зеркально от пульта
+#define SERVO_0GRAD			(180 - 1)
+#define SERVO_90GRAD		(270 - 1)
+#define SERVO_180GRAD 		(360 - 1)
+#define SERVO_SHIFT			0			// смещение - по результатам калибровки
 
 // внешние светодиоды
-#define LED0_PIN        	GPIO3	// на плате запаян PB3
+#define LED0_PIN        	GPIO3
 #define LED0_PORT       	GPIOB
 #define LED1_PIN        	GPIO4
 #define LED1_PORT       	GPIOB
@@ -271,13 +273,12 @@ enum {
 };
 
 enum {
-        MOTOR_STOPPED = 0,
-        MOTOR_UP,
-        MOTOR_DOWN,
-		MOTOR_LEFT,
-        MOTOR_RIGHT,
-        MOTOR_ALARM,
-        MOTOR_OFF
+	MOTOR_STOPPED = 0,
+    MOTOR_UP,
+    MOTOR_DOWN,
+	MOTOR_LEFT,
+    MOTOR_RIGHT,
+    MOTOR_ALARM
 };
 
 typedef struct _motor_ctrl {

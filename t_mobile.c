@@ -278,7 +278,7 @@ static void prvMainTask(void *pvParameters)
     usart_disable_rx_interrupt(USART1);
     sendPackToBLE((char *)js_at);
 
-    motors.state = MOTOR_OFF;
+    motors.state = MOTOR_STOPPED;
     esensor.state = ECHO_ONE;
     stepp[0].mode = stepp[1].mode = STEP_MAN;
     set_servo_angle(90);
@@ -1291,51 +1291,50 @@ bool push_state(uint8_t mstate, uint8_t num)
     {
     	strcat(pack, js_ms);
         strcat(pack, js_delim);
-        strcat(pack, js_lbr);                   // [
-        switch (motors.state)                   // статус
+        if ( (motors.state == MOTOR_STOPPED) || (motors.state == MOTOR_ALARM) ) // 1 параметр
         {
-        case MOTOR_STOPPED:
-        	strcat(pack, js_s);
-            break;
-		case MOTOR_UP:
-        	strcat(pack, js_f);
-            break;
-		case MOTOR_DOWN:
-        	strcat(pack, js_b);
-            break;
-		case MOTOR_LEFT:
-        	strcat(pack, js_l);
-            break;
-		case MOTOR_RIGHT:
-        	strcat(pack, js_r);
-            break;
-		default:
-        	strcat(pack, js_a); // MOTOR_ALARM
-		}
-        strcat(pack, js_coma);
-        // отрицательные значения скоростей передаются 
-        //  положительными значениями: abs(v) + 4
-        int8_t tv = motors.curr_gear;
-        if (tv < 0)
-        {
-            tv = abs(tv) + 4;
+            if (motors.state == MOTOR_STOPPED)
+            {
+                strcat(pack, js_s);    
+            }
+            else
+            {
+                strcat(pack, js_a);
+            }
         }
-        strcat(pack, itoa(tv, 10));  // заданная скорость
-        strcat(pack, js_coma);      // ,
-        tv = motors.gear1;
-        if (tv < 0)
+        else
         {
-            tv = abs(tv) + 4;
+            strcat(pack, js_lbr);                       // [
+            if ( (motors.state == MOTOR_UP) || (motors.state == MOTOR_DOWN) ) // 2 параметра
+            {
+                if (motors.state == MOTOR_UP)
+                {
+                    strcat(pack, js_f);
+                }
+                else
+                {
+                    strcat(pack, js_b);
+                }
+                strcat(pack, js_coma);                  // ,
+                strcat(pack, itoa(motors.curr_gear, 10));
+            }
+            else    // MOTOR_LEFT || MOTOR_RIGHT - 3 параметра
+            {
+                if (motors.state == MOTOR_LEFT)
+                {
+                    strcat(pack, js_l);
+                }
+                else
+                {
+                    strcat(pack, js_r);
+                }
+                strcat(pack, js_coma);                  // ,
+                strcat(pack, itoa(motors.gear1, 10));
+                strcat(pack, js_coma);                  // ,
+                strcat(pack, itoa(motors.gear2, 10));
+            }
+            strcat(pack, js_rbr);                       // ]
         }
-        strcat(pack, itoa(tv, 10));     // скорость ДПТ1
-        strcat(pack, js_coma);                     // ,
-        tv = motors.gear2;
-        if (tv < 0)
-        {
-            tv = abs(tv) + 4;
-        }
-        strcat(pack, itoa(tv, 10));     // скорость ДПТ2
-        strcat(pack, js_rbr);                      // ]
 	}
     else if ( mstate == STATE_PACK_STEPP)
     {
@@ -1666,13 +1665,13 @@ void put_servo_cmd(char command, int16_t iparam)
     else
     {
     	item.cmd = SERVO_SET;
-        if ( (iparam < SERVO_0GRAD) || (iparam < SERVO_180GRAD) )
+        if ( (iparam < 0) || (iparam > 180) )
         {
-        	item.param = SERVO_90GRAD;
+        	item.param = 90;
 		}
         else
         {
-        	item.param = abs(iparam); // SET
+        	item.param = (uint8_t)iparam; // SET
 		}
 	}
     uint8_t cc = 5;
@@ -2276,8 +2275,8 @@ static void tim2_setup(void)
                       GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_TIM2_CH3);
 
     timer_set_mode(TIM2, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
-    timer_set_prescaler(TIM2, (4000 - 1));
-    timer_set_period(TIM2, 360 -1);  // ARR
+    timer_set_prescaler(TIM2, (400 - 1));  // 180 kHz
+    timer_set_period(TIM2, 3600 - 1);        // 50 Hz
     timer_disable_preload(TIM2);
     timer_enable_oc_preload(TIM2, TIM_OC3);
     timer_set_oc_mode(TIM2, TIM_OC3, TIM_OCM_PWM1);
@@ -2285,9 +2284,10 @@ static void tim2_setup(void)
     timer_set_oc_polarity_high(TIM2, TIM_OC3);
     timer_set_oc_idle_state_set(TIM2, TIM_OC3);
     timer_set_oc_slow_mode(TIM2, TIM_OC3);
-    timer_set_oc_value(TIM2, TIM_OC3, SERVO_90GRAD);
-
+    timer_set_oc_value(TIM2, TIM_OC3, SERVO_90GRAD);    // среднее положение ~ 1.5mS
     timer_enable_oc_output(TIM2, TIM_OC3);
+    
+    timer_enable_break_main_output(TIM2);
     timer_enable_counter(TIM2);
 }
 
@@ -2339,6 +2339,7 @@ static void tim3_setup(void)
     timer_set_oc_slow_mode(TIM3, TIM_OC4);
     timer_enable_oc_output(TIM3, TIM_OC4);
 
+    timer_enable_break_main_output(TIM3);
     timer_enable_counter(TIM3);
 }
 
@@ -2367,6 +2368,8 @@ static void tim4_setup(void)
     timer_set_oc_value(TIM4, TIM_OC4, 2);
     timer_set_oc_slow_mode(TIM4, TIM_OC4);
     timer_enable_oc_output(TIM4, TIM_OC4);
+
+    timer_enable_break_main_output(TIM4);
 }
 
 /*-----------------------------------------------------------*/
