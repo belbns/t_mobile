@@ -96,7 +96,7 @@ static void dma_adc_init(void);
 
 static void dma_write(char *data, int size);
 
-char * itoa(int val, int base);
+char * itoa_m(int val, int base);
 
 void ADC_calc(void);
 uint8_t get_fields(char *fld);
@@ -351,7 +351,7 @@ static void prvMainTask(void *pvParameters)
             pdTRUE,             // очищаем флаг
             pdFALSE,            // Don't wait for all bits.
             0 );                // ticks to wait
-		
+		/*
 		if ( (uxBits & alarm_OVERLOAD_BIT) != 0 )
         {   
         	// Слишком большой ток - очищаем очереди и выключаем моторы
@@ -362,7 +362,7 @@ static void prvMainTask(void *pvParameters)
             stop_all();
             push_state(STATE_PACK_OVERLOAD, 0);
 		}
-
+        */
         if ( (uxBits & alarm_CONTRL_LOW_VOLTAGE_BIT) != 0 )
         {   
             // низкий заряд батареи
@@ -1316,7 +1316,7 @@ bool push_state(uint8_t mstate, uint8_t num)
                     strcat(pack, js_b);
                 }
                 strcat(pack, js_coma);                  // ,
-                strcat(pack, itoa(motors.curr_gear, 10));
+                strcat(pack, itoa_m(motors.curr_gear, 10));
             }
             else    // MOTOR_LEFT || MOTOR_RIGHT - 3 параметра
             {
@@ -1329,9 +1329,9 @@ bool push_state(uint8_t mstate, uint8_t num)
                     strcat(pack, js_r);
                 }
                 strcat(pack, js_coma);                  // ,
-                strcat(pack, itoa(motors.gear1, 10));
+                strcat(pack, itoa_m(motors.gear1, 10));
                 strcat(pack, js_coma);                  // ,
-                strcat(pack, itoa(motors.gear2, 10));
+                strcat(pack, itoa_m(motors.gear2, 10));
             }
             strcat(pack, js_rbr);                       // ]
         }
@@ -1389,9 +1389,9 @@ bool push_state(uint8_t mstate, uint8_t num)
             strcat(pack, js_lbr);                   // [
             strcat(pack, stn);                              // 0/1
             strcat(pack, js_coma);                  // ,
-            strcat(pack, itoa((int16_t)stepp[num].turns, 10));
+            strcat(pack, itoa_m((int16_t)stepp[num].turns, 10));
             strcat(pack, js_coma);                  // ,
-            strcat(pack, itoa((int16_t)stepp[num].angle_curr, 10));
+            strcat(pack, itoa_m((int16_t)stepp[num].angle_curr, 10));
             strcat(pack, js_rbr);                   // ]
 		}
 	}
@@ -1400,8 +1400,8 @@ bool push_state(uint8_t mstate, uint8_t num)
     	strcat(pack, js_led);
         strcat(pack, js_delim);
         strcat(pack, js_lbr);                   // [
-        //itoa(num, st, 10);
-        strcat(pack, itoa(num, 10));                            // 0..3
+        //itoa_m(num, st, 10);
+        strcat(pack, itoa_m(num, 10));                            // 0..3
         strcat(pack, js_coma);                  // ,
         switch (leds[num].mode)
         {
@@ -1421,9 +1421,9 @@ bool push_state(uint8_t mstate, uint8_t num)
     	strcat(pack, js_adc);
         strcat(pack, js_delim);
         strcat(pack, js_lbr);                   // [
-        strcat(pack, itoa(num, 10));                            // 0..3
+        strcat(pack, itoa_m(num, 10));                            // 0..3
         strcat(pack, js_coma);                  // ,
-        strcat(pack, itoa(adcval[num], 10));
+        strcat(pack, itoa_m(adcval[num], 10));
         // adc value
         strcat(pack, js_rbr);                   // ]
 	}
@@ -1431,55 +1431,55 @@ bool push_state(uint8_t mstate, uint8_t num)
     {
     	strcat(pack, js_echo);
         strcat(pack, js_delim);
-        strcat(pack, itoa(esensor.value, 10));		// echo value
+        strcat(pack, itoa_m(esensor.value, 10));		// echo value
     }
     else if ( mstate == STATE_PACK_SERVO)
 	{
     	strcat(pack, js_servo);
         strcat(pack, js_delim);
-		strcat(pack, itoa(servo.angle, 10));
+		strcat(pack, itoa_m(servo.angle, 10));
 	}
     else if ( mstate == STATE_PACK_QUEUE_CMD)
     {
     	strcat(pack, js_queue);
         strcat(pack, js_delim);
-        strcat(pack, itoa(num, 10));                            // наличие команд в очереди
+        strcat(pack, itoa_m(num, 10));                            // наличие команд в очереди
 	}
     else if ( mstate == STATE_PACK_QUEUE_MOT)
     {
     	strcat(pack, js_qmot);
         strcat(pack, js_delim);
-        strcat(pack, itoa(num, 10));                            // наличие команд в очереди
+        strcat(pack, itoa_m(num, 10));                            // наличие команд в очереди
 	}
     else if ( mstate == STATE_PACK_QUEUE_ST1)
     {
     	strcat(pack, js_qst1);
         strcat(pack, js_delim);
-        strcat(pack, itoa(num, 10));                            // наличие команд в очереди
+        strcat(pack, itoa_m(num, 10));                            // наличие команд в очереди
 	}
     else if ( mstate == STATE_PACK_QUEUE_ST2)
     {
     	strcat(pack, js_qst2);
         strcat(pack, js_delim);
-        strcat(pack, itoa(num, 10));                            // наличие команд в очереди
+        strcat(pack, itoa_m(num, 10));                            // наличие команд в очереди
 	}
     else if ( mstate == STATE_PACK_QUEUE_SERVO)
     {
     	strcat(pack, js_qservo);
         strcat(pack, js_delim);
-        strcat(pack, itoa(num, 10));                            // наличие команд в очереди
+        strcat(pack, itoa_m(num, 10));                            // наличие команд в очереди
 	}
     else if ( mstate == STATE_PACK_QUEUE_ECHO)
     {
     	strcat(pack, js_qecho);
         strcat(pack, js_delim);
-        strcat(pack, itoa(num, 10));                            // наличие команд в очереди
+        strcat(pack, itoa_m(num, 10));                            // наличие команд в очереди
 	}
     else if ( mstate == STATE_PACK_QUEUE_LEDS)
     {
     	strcat(pack, js_qleds);
         strcat(pack, js_delim);
-        strcat(pack, itoa(num, 10));                            // наличие команд в очереди
+        strcat(pack, itoa_m(num, 10));                            // наличие команд в очереди
 	}
     else
     {
@@ -1524,11 +1524,8 @@ void put_motors_cmd(char command, int16_t iparam)
     switch (command)
     {       
     case 'f':
+    case 'b':
     	item.cmd = MOT_UP_DOWN;
-        break;
-	case 'b':
-    	item.cmd = MOT_UP_DOWN;
-        item.param = -item.param;
         break;
 	case 'r':
     	item.cmd = MOT_RIGHT;
@@ -1600,7 +1597,7 @@ void put_stepp_cmd(uint8_t step_num, char command, int16_t iparam)
 	}
     else
     {
-    	xQueue = xCmdSt1Queue;
+    	xQueue = xCmdSt2Queue;
 	}
                 
     uint8_t cc = 5;
@@ -1811,14 +1808,14 @@ void ADC_calc(void)
 
     // 1-е измерение по каждому каналу отбрасываем, 2-е и 3-е усредняются
     uint16_t v = (ADCbuffer[1] + ADCbuffer[2]) >> 1;    // 3v3
-    if (abs(adcval[0] - v) > 7)
+    if (abs(adcval[0] - v) > 20)
     {
     	xEventGroupSetBits(xEventGroupDev, dev_ADC0_BIT);
         adcval[0] = v;
 	}
 
     v = (ADCbuffer[10] + ADCbuffer[11]) >> 1; // 6v
-    if (abs(adcval[1] - v) > 7)
+    if (abs(adcval[1] - v) > 20)
     {
     	xEventGroupSetBits(xEventGroupDev, dev_ADC1_BIT);
         adcval[1] = v;
@@ -1893,8 +1890,8 @@ void running_delay(uint32_t lasting, uint8_t c_status)
 	}
 }
 
-// в стандарте C99 этой функции нет, а sprinf слишком тяжелая
-char * itoa(int val, int base) {
+// в стандарте C99 функции itoa нет, а sprinf слишком тяжелая
+char * itoa_m(int val, int base) {
     static char buf[32] = {0};
 
     if (val == 0) {
@@ -1902,13 +1899,20 @@ char * itoa(int val, int base) {
         buf[1] = '\0';
         return &buf[0];
     }
-    else {
+    else
+    {
         int i = 30;
+        unsigned int uval = abs(val);
 
-        for(; val && i ; --i, val /= base)
+        for(; uval && i ; --i, uval /= base)
         {
-            buf[i] = "0123456789abcdef"[val % base];
+            buf[i] = "0123456789abcdef"[uval % base];
         }
+        if (val < 0)
+        {
+            buf[i--] = '-';
+        }
+
         return &buf[i+1];
     }
 }
@@ -2164,10 +2168,8 @@ static void usart_setup(void)
     nvic_enable_irq(NVIC_DMA1_CHANNEL4_IRQ);
     nvic_enable_irq(NVIC_USART1_IRQ);
     
-	/* Setup GPIO pin GPIO_USART1_RE_TX on GPIO port A for transmit. */
 	gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ,
 		      GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX);
-	/* Setup GPIO pin GPIO_USART1_RE_RX on GPIO port A for receive. */
 	gpio_set_mode(GPIOA, GPIO_MODE_INPUT,
 		      GPIO_CNF_INPUT_FLOAT, GPIO_USART1_RX);
 
@@ -2298,19 +2300,19 @@ static void tim3_setup(void)
     rcc_periph_reset_pulse(RST_TIM3);
 
     gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ,
-                      GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_TIM3_CH1 | GPIO_TIM3_CH2); // PA6, PA7
+                      GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_TIM3_CH1 | GPIO_TIM3_CH2); // PA6,PA7
     gpio_set_mode(GPIOB, GPIO_MODE_OUTPUT_50_MHZ,
                       GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_TIM3_CH3 | GPIO_TIM3_CH4); // PB0, PB1
 
     timer_set_mode(TIM3, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
-    timer_set_prescaler(TIM3, (3 - 1));
-    timer_set_period(TIM3, 512 - 1);    // ARR
-    timer_enable_preload(TIM3);         // ширина импульса изменится со след. периода
+    timer_set_prescaler(TIM3, (3 - 1)); // 24 MHz
+    timer_set_period(TIM3, 512 - 1);    // 46875 Hz
+    timer_disable_preload(TIM3);
 
     timer_enable_oc_preload(TIM3, TIM_OC1);
     timer_set_oc_mode(TIM3, TIM_OC1, TIM_OCM_PWM1);
     timer_set_oc_polarity_high(TIM3, TIM_OC1);
-    timer_set_oc_idle_state_unset(TIM3, TIM_OC1);
+    timer_set_oc_idle_state_set(TIM3, TIM_OC1);
     timer_set_oc_value(TIM3, TIM_OC1, 0);
     timer_set_oc_slow_mode(TIM3, TIM_OC1);
     timer_enable_oc_output(TIM3, TIM_OC1);
@@ -2318,7 +2320,7 @@ static void tim3_setup(void)
     timer_enable_oc_preload(TIM3, TIM_OC2);
     timer_set_oc_mode(TIM3, TIM_OC2, TIM_OCM_PWM1);
     timer_set_oc_polarity_high(TIM3, TIM_OC2);
-    timer_set_oc_idle_state_unset(TIM3, TIM_OC2);
+    timer_set_oc_idle_state_set(TIM3, TIM_OC2);
     timer_set_oc_value(TIM3, TIM_OC2, 0);
     timer_set_oc_slow_mode(TIM3, TIM_OC2);
     timer_enable_oc_output(TIM3, TIM_OC2);
@@ -2326,7 +2328,7 @@ static void tim3_setup(void)
     timer_enable_oc_preload(TIM3, TIM_OC3);
     timer_set_oc_mode(TIM3, TIM_OC3, TIM_OCM_PWM1);
     timer_set_oc_polarity_high(TIM3, TIM_OC3);
-    timer_set_oc_idle_state_unset(TIM3, TIM_OC3);
+    timer_set_oc_idle_state_set(TIM3, TIM_OC3);
     timer_set_oc_value(TIM3, TIM_OC3, 0);
     timer_set_oc_slow_mode(TIM3, TIM_OC3);
     timer_enable_oc_output(TIM3, TIM_OC3);
@@ -2334,7 +2336,7 @@ static void tim3_setup(void)
     timer_enable_oc_preload(TIM3, TIM_OC4);
     timer_set_oc_mode(TIM3, TIM_OC4, TIM_OCM_PWM1);
     timer_set_oc_polarity_high(TIM3, TIM_OC4);
-    timer_set_oc_idle_state_unset(TIM3, TIM_OC4);
+    timer_set_oc_idle_state_set(TIM3, TIM_OC4);
     timer_set_oc_value(TIM3, TIM_OC4, 0);
     timer_set_oc_slow_mode(TIM3, TIM_OC4);
     timer_enable_oc_output(TIM3, TIM_OC4);

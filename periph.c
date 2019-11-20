@@ -31,7 +31,7 @@ extern EventGroupHandle_t xEventGroupADC;
 extern EventGroupHandle_t xEventGroupDev;
 extern SemaphoreHandle_t xSteppMutex[2]; 
 
-const uint8_t motor_gear[] = {K_GEAR0, K_GEAR1, K_GEAR2, K_GEAR3};
+const uint8_t motor_gear[4] = {K_GEAR0, K_GEAR1, K_GEAR2, K_GEAR3};
 
 motor_ctrl motors = {
     .state = MOTOR_STOPPED, .curr_gear = GEAR_0, .gear1 = GEAR_0, .gear2 = GEAR_0
@@ -177,81 +177,72 @@ void set_motor_value(uint8_t mmask, int8_t sgear, int8_t sgear1, int8_t sgear2)
     {
         motors.curr_gear = sgear;
     }
-
-
+    
     if ( mmask & 1 )
     {
-    	// в 0 для исключения сквозных токов 
+        need_update1 = 1;
+        motors.gear1 = sgear1;
+    }
+    if ( mmask & 2 )
+    {
+        need_update2 = 1;
+        motors.gear2 = sgear2;
+    }
+    
+    if (need_update1)
+    {
+        // в 0 для исключения сквозных токов, а также при 0-й скорости 
         timer_set_oc_value(TIM3, TIM_OC1, 0);
         timer_set_oc_value(TIM3, TIM_OC2, 0);
 
-    	if (sgear1 != 0)
+        if (motors.gear1 != 0)
         {
-        	pulse1 = ((motor_gear[abs(sgear1)]) << 4) & 0x3F;	// K_GEARx * 16
+            pulse1 = motor_gear[abs(motors.gear1) & 3] << 4;   // K_GEARx * 16
             if (pulse1 > PWM_MAX_VALUE)
             {
-            	pulse1 = PWM_MAX_VALUE;
+                pulse1 = PWM_MAX_VALUE;
             }
-        }
-    	else
-    	{
-        	pulse1 = 0;
-    	}
-    	need_update1 = 1;
-        motors.gear1 = sgear1;
-    }
 
-    if ( mmask & 2 )
-    {
-    	// в 0 для исключения сквозных токов
-        timer_set_oc_value(TIM3, TIM_OC3, 0);
-        timer_set_oc_value(TIM3, TIM_OC4, 0);
-
-    	if (sgear2 != 0)
-        {
-            pulse2 = ((motor_gear[abs(sgear2)]) << 4) & 0x3F;   // K_GEARx * 16
-            if (pulse2 > PWM_MAX_VALUE)
+            if (motors.gear1 > 0)
             {
-            	pulse2 = PWM_MAX_VALUE;
+                // ждем 0 на TIM3->CCR2
+                while (gpio_get(MOTOR1_PORT, MOTOR1_PIN2) != 0) ;
+                timer_set_oc_value(TIM3, TIM_OC1, pulse1);
             }
-        }
-    	else
-    	{
-        	pulse2 = 0;
-    	}
-    	need_update2 = 1;
-        motors.gear2 = sgear2;
-    }
-
-    if (need_update1)
-    {
-        if (sgear1 > 0)
-        {
-        	// ждем 0 на TIM3->CCR2
-            while (gpio_get(MOTOR1_PORT, MOTOR1_PIN2) != 0) ;
-            timer_set_oc_value(TIM3, TIM_OC1, pulse1);
-        }
-        else if (sgear1 < 0)
-        {
-        	// ждем 0 на TIM3->CCR1
-            while (gpio_get(MOTOR1_PORT, MOTOR1_PIN1) != 0) ;
-            timer_set_oc_value(TIM3, TIM_OC2, pulse1);
+            else // < 0
+            {
+                // ждем 0 на TIM3->CCR1
+                while (gpio_get(MOTOR1_PORT, MOTOR1_PIN1) != 0) ;
+                timer_set_oc_value(TIM3, TIM_OC2, pulse1);
+            }
         }
     }
 
     if (need_update2)
     {
-        if (sgear2 > 0)
+        // в 0 для исключения сквозных токов, а также при 0-й скорости 
+        timer_set_oc_value(TIM3, TIM_OC3, 0);
+        timer_set_oc_value(TIM3, TIM_OC4, 0);
+
+        if (motors.gear2 != 0)
         {
-        	// ждем 0 на TIM3->CCR4
-            while (gpio_get(MOTOR2_PORT, MOTOR2_PIN2) != 0) ;
-            timer_set_oc_value(TIM3, TIM_OC3, pulse2);
-        }
-        else if (sgear2 < 0)
-        {
-        	// ждем 0 на TIM3->CCR3
-            while (gpio_get(MOTOR2_PORT, MOTOR2_PIN1) != 0) ;
-            timer_set_oc_value(TIM3, TIM_OC4, pulse2);
+            pulse2 = motor_gear[abs(motors.gear2) & 3] << 4;   // K_GEARx * 16
+            if (pulse2 > PWM_MAX_VALUE)
+            {
+                pulse2 = PWM_MAX_VALUE;
+            }
+            if (motors.gear2 > 0)
+            {
+        	   // ждем 0 на TIM3->CCR4
+                while (gpio_get(MOTOR2_PORT, MOTOR2_PIN2) != 0) ;
+                timer_set_oc_value(TIM3, TIM_OC3, pulse2);
+            }
+            else // < 0
+            {
+        	   // ждем 0 на TIM3->CCR3
+                while (gpio_get(MOTOR2_PORT, MOTOR2_PIN1) != 0) ;
+                timer_set_oc_value(TIM3, TIM_OC4, pulse2);
+            }
         }
     }
 

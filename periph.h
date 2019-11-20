@@ -64,12 +64,12 @@
 #define STEP2_PIN3      	GPIO7
 #define STEP2_PIN4      	GPIO8
 
-#define MOTOR1_PIN1			GPIO6
-#define MOTOR1_PIN2			GPIO7
+#define MOTOR1_PIN1			GPIO6	// TIM3 CH1
+#define MOTOR1_PIN2			GPIO7	// TIM3 CH2
 #define MOTOR1_PORT			GPIOA
 
-#define MOTOR2_PIN1			GPIO0
-#define MOTOR2_PIN2			GPIO1
+#define MOTOR2_PIN1			GPIO0 	// TIM3 CH3
+#define MOTOR2_PIN2			GPIO1 	// TIM3 CH4
 #define MOTOR2_PORT			GPIOB
 
 #define serRX_QUEUE_LEN		( 32 )	// длина очереди приема из UART
