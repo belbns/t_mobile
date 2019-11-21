@@ -301,6 +301,7 @@ static void prvMainTask(void *pvParameters)
     EventBits_t uxBits;
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
+    TickType_t xLastADCStatTime = xLastWakeTime;
 
     // для парсинга пакета
     static char tag[8];
@@ -536,6 +537,15 @@ static void prvMainTask(void *pvParameters)
 				xLastWakeTime = xLastWakeTimeNow;
                 put_to_cmd_queue(CMD_STOP_ALL, 0);
 			}
+
+            if ((xLastWakeTimeNow - xLastADCStatTime) > ADC_STAT_INTERVAL)
+            {
+                xEventGroupSetBits(xEventGroupDev, dev_ADC0_BIT);
+                xEventGroupSetBits(xEventGroupDev, dev_ADC1_BIT);
+                xEventGroupSetBits(xEventGroupDev, dev_ADC2_BIT);
+                xEventGroupSetBits(xEventGroupDev, dev_ADC3_BIT);
+                xLastADCStatTime = xLastWakeTimeNow; 
+            }
 		}
 
 		check_states();
@@ -1049,7 +1059,19 @@ void procSteppCmd(uint8_t stnum, ncommand_item cmd)
         	vTaskDelay(pdMS_TO_TICKS(10));
 		}
         // <угол поворота> = <новое значение> - <текущее значение>
-        uint16_t a = cmd.param - stepp[stnum].angle_curr;
+        int16_t a = (int16_t)(cmd.param - stepp[stnum].angle);
+        if (abs(a) > 255)
+        {
+            if (a > 0)
+            {
+                a = -(stepp[stnum].angle + (512 - cmd.param));
+            }
+            else // < 0
+            {
+                a = 512 + a;
+            }
+        }
+
         if ( xSemaphoreTake(xSteppMutex[stnum], pdMS_TO_TICKS(200)))
         {
         	stepp_clk_cclk(stnum, a);
@@ -1070,7 +1092,7 @@ void procSteppCmd(uint8_t stnum, ncommand_item cmd)
         {
         	vTaskDelay(pdMS_TO_TICKS(10));
 		}
-        if (stepp[stnum].angle_curr != 0)
+        if (stepp[stnum].angle != 0)
         {
         	uint8_t fast = 0;
             if (cmd.cmd == ST_NULL_FAST)
@@ -1391,7 +1413,7 @@ bool push_state(uint8_t mstate, uint8_t num)
             strcat(pack, js_coma);                  // ,
             strcat(pack, itoa_m((int16_t)stepp[num].turns, 10));
             strcat(pack, js_coma);                  // ,
-            strcat(pack, itoa_m((int16_t)stepp[num].angle_curr, 10));
+            strcat(pack, itoa_m((int16_t)stepp[num].angle, 10));
             strcat(pack, js_rbr);                   // ]
 		}
 	}
@@ -1808,16 +1830,16 @@ void ADC_calc(void)
 
     // 1-е измерение по каждому каналу отбрасываем, 2-е и 3-е усредняются
     uint16_t v = (ADCbuffer[1] + ADCbuffer[2]) >> 1;    // 3v3
-    if (abs(adcval[0] - v) > 20)
+    if (abs(adcval[0] - v) > 3)
     {
-    	xEventGroupSetBits(xEventGroupDev, dev_ADC0_BIT);
+    	//xEventGroupSetBits(xEventGroupDev, dev_ADC0_BIT);
         adcval[0] = v;
 	}
 
     v = (ADCbuffer[10] + ADCbuffer[11]) >> 1; // 6v
-    if (abs(adcval[1] - v) > 20)
+    if (abs(adcval[1] - v) > 3)
     {
-    	xEventGroupSetBits(xEventGroupDev, dev_ADC1_BIT);
+    	//xEventGroupSetBits(xEventGroupDev, dev_ADC1_BIT);
         adcval[1] = v;
 	}
 
@@ -1831,16 +1853,16 @@ void ADC_calc(void)
 	}
 
     v = (ADCbuffer[7] + ADCbuffer[8]) >> 1; // P5
-    if (abs(adcval[2] - v) > 7)
+    if (abs(adcval[2] - v) > 3)
     {
-    	xEventGroupSetBits(xEventGroupDev, dev_ADC2_BIT);
+    	//xEventGroupSetBits(xEventGroupDev, dev_ADC2_BIT);
         adcval[2] = v;
 	}
 
     v = (ADCbuffer[4] + ADCbuffer[5]) >> 1; // P6
-    if (abs(adcval[2] - v) > 7)
+    if (abs(adcval[2] - v) > 3)
     {
-    	xEventGroupSetBits(xEventGroupDev, dev_ADC3_BIT);
+    	//xEventGroupSetBits(xEventGroupDev, dev_ADC3_BIT);
         adcval[3] = v;
 	}
         

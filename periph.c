@@ -26,6 +26,7 @@
  */
 
 void oneStep(uint8_t pos, uint8_t stpr);
+void angle_update(uint8_t stnum);
 
 extern EventGroupHandle_t xEventGroupADC;
 extern EventGroupHandle_t xEventGroupDev;
@@ -94,16 +95,8 @@ void vApplicationTickHook( void )
             stepp[i].last_step = 0;
                 
             // приращиваем текущий угол - последние 8 тактов учитываются здесь
-            if ( stepp[i].clockw )
-            {
-                stepp[i].angle_curr++;
-                xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
-            }
-            else
-            {
-                stepp[i].angle_curr--;
-                xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
-            }
+            angle_update(i);
+            xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
         }
         else if ( stepp[i].steps > 0 )  // еще есть куда шагать
         {
@@ -112,25 +105,17 @@ void vApplicationTickHook( void )
             // при переходе pos через 0 (отработано 8 тактов) выполняется приращение
             // текущего угиа ШД. Для исключения исходного нуля stepp[i].moving переводится
             // в 1 после обработки 1 такта.
+            if ((pos == 0) && stepp[i].moving)
+            {
+                angle_update(i);
+                xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
+            }
+
             if ( stepp[i].clockw )
             {
-                // при переходе через 0 (исключая начальный ноль) - приращение текущего угла
-                if ((pos == 0) && stepp[i].moving)
-                {
-                    stepp[i].angle_curr++;
-                    xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
-                }
                 pos = 7 - pos;
             }
-            else
-            {
-                // приращение текущего угла
-                if ((pos == 0) && stepp[i].moving)
-                {
-                    stepp[i].angle_curr--;
-                    xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
-                }
-            }
+
             oneStep(pos, i);
                         
             stepp[i].steps--;
@@ -144,20 +129,36 @@ void vApplicationTickHook( void )
             stepp[i].moving = 1;
             xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
         }
-        // контроль полного оборота
-        if (stepp[i].angle_curr == STEPPER_ANGLE_TURN)
-        {
-            stepp[i].angle_curr = 0;
-            stepp[i].turns++;
-            xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
-        }
-        else if (stepp[i].angle_curr == -STEPPER_ANGLE_TURN)
-        {
-            stepp[i].angle_curr = 0;
-            stepp[i].turns--;
-            xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
-        }
         xSemaphoreGiveFromISR( xSteppMutex[i], &xHigherPriorityTaskWoken );
+    }
+}
+
+// инкремент/декремент угла ШД
+void angle_update(uint8_t stnum)
+{
+    if ( stepp[stnum].clockw )  // по ч.с. 0, 511, 510, ..., 1, 0, 511
+    {
+        if (stepp[stnum].angle == 0)
+        {
+            stepp[stnum].angle = STEPPER_ANGLE_TURN - 1;
+            stepp[stnum].turns--;
+        }
+        else
+        {
+            stepp[stnum].angle--;
+        }
+    }
+    else    // против ч.с. 0, 1, 2, ..., 511, 0
+    {
+        if (stepp[stnum].angle == (STEPPER_ANGLE_TURN - 1))
+        {
+            stepp[stnum].angle = 0;   
+            stepp[stnum].turns++;
+        }
+        else
+        {
+            stepp[stnum].angle++;
+        }                
     }
 }
 
@@ -359,28 +360,28 @@ void stepp_start_cont(uint8_t stnum, uint8_t cmd)
 
     uint32_t steps = 0;
     // Вычисляем кол-во шагов до точки 0/512
-    if (stepp[stnum].angle_curr != 0)
+    if (stepp[stnum].angle != 0)
     {
-        if (stepp[stnum].angle_curr > 0)
+        if (stepp[stnum].angle > 0)
         {
             if (cmd == ST_CONT_CCLK)
             {
-                steps = (STEPPER_ANGLE_TURN - stepp[stnum].angle_curr) << 3;
+                steps = (STEPPER_ANGLE_TURN - stepp[stnum].angle) << 3;
             }
             else
             {
-                steps = stepp[stnum].angle_curr << 3;
+                steps = stepp[stnum].angle << 3;
             }
         }
         else
         {
             if (cmd == ST_CONT_CCLK)
             {
-                steps = stepp[stnum].angle_curr << 3;
+                steps = stepp[stnum].angle << 3;
             }
             else
             {
-                steps = (STEPPER_ANGLE_TURN - stepp[stnum].angle_curr) << 3;
+                steps = (STEPPER_ANGLE_TURN - stepp[stnum].angle) << 3;
             }
         }
     }
@@ -417,11 +418,11 @@ void stepp_clk_cclk(uint8_t stnum, int16_t sparam)
 
 	if (sparam < 0)
 	{
-		stepp[stnum].clockw = 0;
+		stepp[stnum].clockw = 1;
 	}
 	else
 	{
-		stepp[stnum].clockw = 1;	// clockwise
+		stepp[stnum].clockw = 0;	// clockwise
 	}
 	stepp[stnum].steps = steps << 3;	// *8
 
@@ -443,16 +444,16 @@ void stepp_to_null(uint8_t stnum, uint8_t fast)
 			vTaskDelay(pdMS_TO_TICKS(10));
 		}
 
-		if (stepp[stnum].angle_curr != 0)
+		if (stepp[stnum].angle != 0)
 		{
 			int32_t steps = 0;
 			if (!fast)
 			{
-				steps = stepp[stnum].angle_curr;
+				steps = stepp[stnum].angle;
 			}
 			else
 			{
-				steps = stepp[stnum].angle_curr % STEPPER_ANGLE_TURN;
+				steps = stepp[stnum].angle % STEPPER_ANGLE_TURN;
 				stepp[stnum].turns = 0;	// обнуляем обороты
 			}
 			if (steps > 0)
