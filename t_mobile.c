@@ -423,6 +423,13 @@ static void prvMainTask(void *pvParameters)
                         put_to_cmd_queue(CMD_PAUSE, (uint16_t)atoi(jparams[0]));
                         parsed = true;
                     }
+                    //CMD_CHECK
+                    if (strstr(tag, jsp_check))
+                    {
+                        parsed = true;
+                        put_to_cmd_queue(CMD_CHECK, 0);
+
+                    }
                     // CMD_POWER_OFF
                     if ( !parsed && strstr(tag, jsp_pwroff))
                     {
@@ -724,6 +731,9 @@ static void prvCmdTask(void *pvParameters)
             {
             case CMD_PAUSE:     // просто пауза
             	running_delay(item.param, cnt_status);
+                break;
+            case CMD_CHECK:     // проверка состояния устройств
+                xEventGroupSetBits(xEventGroupDev, (const EventBits_t)0x1FFF);
                 break;
 			case CMD_POWER_OFF: // выключить
             	flag_power_off = 1;
@@ -1060,15 +1070,15 @@ void procSteppCmd(uint8_t stnum, ncommand_item cmd)
 		}
         // <угол поворота> = <новое значение> - <текущее значение>
         int16_t a = (int16_t)(cmd.param - stepp[stnum].angle);
-        if (abs(a) > 255)
+        if (abs(a) >= (STEPPER_ANGLE_TURN / 2))
         {
             if (a > 0)
             {
-                a = -(stepp[stnum].angle + (512 - cmd.param));
+                a = -(stepp[stnum].angle + (STEPPER_ANGLE_TURN - cmd.param));
             }
             else // < 0
             {
-                a = 512 + a;
+                a = STEPPER_ANGLE_TURN + a;
             }
         }
 
@@ -1396,7 +1406,14 @@ bool push_state(uint8_t mstate, uint8_t num)
             	strcat(pack, js_m);
                 break;
 			case STEP_MAN_CONT:
-            	strcat(pack, js_c);
+                if (stepp[num].clockw == 0)
+                {
+                    strcat(pack, js_l);    
+                }
+                else
+                {
+            	   strcat(pack, js_r);
+                }
                 break;
 			default:
             	strcat(pack, js_n);

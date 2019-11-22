@@ -62,6 +62,8 @@ const uint16_t step_pins[2][4] = {
 	{ STEP2_PIN1, STEP2_PIN2, STEP2_PIN3, STEP2_PIN4 }
 };
 
+static uint8_t st_fast_ret = 0;
+
 /*
  * Callback функция системного таймера.
  * Используется для тактирования шаговых двигателей
@@ -84,13 +86,21 @@ void vApplicationTickHook( void )
         {
             if (stepp[i].mode != STEP_MAN_CONT)
             {
-                stepp_stop(i);
-                stepp[i].moving = 0;
+                if ((stepp[i].turns != 0) && (st_fast_ret != 0))
+                {
+                    stepp[i].steps = STEPPER_ANGLE_TURN << 3; // 512 * 8
+                }
+                else
+                {
+                    stepp_stop(i);
+                    stepp[i].moving = 0;
+                    st_fast_ret = 0;
+                }
                 xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
             }
             else    // непрерывное движение
             {
-                stepp[i].steps = (uint32_t)(STEPPER_ANGLE_TURN << 3); // 512 * 8
+                stepp[i].steps = STEPPER_ANGLE_TURN << 3; // 512 * 8
             }
             stepp[i].last_step = 0;
                 
@@ -358,46 +368,24 @@ void stepp_start_cont(uint8_t stnum, uint8_t cmd)
 
     stepp[stnum].mode = STEP_MAN_CONT;
 
-    uint32_t steps = 0;
     // Вычисляем кол-во шагов до точки 0/512
-    if (stepp[stnum].angle != 0)
-    {
-        if (stepp[stnum].angle > 0)
-        {
-            if (cmd == ST_CONT_CCLK)
-            {
-                steps = (STEPPER_ANGLE_TURN - stepp[stnum].angle) << 3;
-            }
-            else
-            {
-                steps = stepp[stnum].angle << 3;
-            }
-        }
-        else
-        {
-            if (cmd == ST_CONT_CCLK)
-            {
-                steps = stepp[stnum].angle << 3;
-            }
-            else
-            {
-                steps = (STEPPER_ANGLE_TURN - stepp[stnum].angle) << 3;
-            }
-        }
-    }
-    else
-    {
-        steps = STEPPER_ANGLE_TURN;
-    }
     if (cmd == ST_CONT_CCLK)
     {
         stepp[stnum].clockw = 0;
+        stepp[stnum].steps = (STEPPER_ANGLE_TURN - stepp[stnum].angle - 1) << 3;
     }
     else
     {
         stepp[stnum].clockw = 1;
+        if (stepp[stnum].angle > 0)
+        {
+            stepp[stnum].steps = stepp[stnum].angle << 3;    
+        }
+        else
+        {
+            stepp[stnum].steps = STEPPER_ANGLE_TURN << 3;
+        }
     }
-    stepp[stnum].steps = steps;
 
     xEventGroupSetBits(xEventGroupDev, evStep);
 }
@@ -444,31 +432,21 @@ void stepp_to_null(uint8_t stnum, uint8_t fast)
 			vTaskDelay(pdMS_TO_TICKS(10));
 		}
 
-		if (stepp[stnum].angle != 0)
-		{
-			int32_t steps = 0;
-			if (!fast)
-			{
-				steps = stepp[stnum].angle;
-			}
-			else
-			{
-				steps = stepp[stnum].angle % STEPPER_ANGLE_TURN;
-				stepp[stnum].turns = 0;	// обнуляем обороты
-			}
-			if (steps > 0)
-			{
-				stepp[stnum].clockw = 0;
-			}
-			else
-			{
-				stepp[stnum].clockw = 1;
-			}
-
-			stepp[stnum].steps = ((uint32_t)abs(steps)) << 3;
-			xSemaphoreGive( xSteppMutex[stnum] );
-		}
+        // определяем возврат направление и кол-во шагов для возврата в 0.
+        // возврат оборотов определяется флагом fast и выполняется в vApplicationTickHook.
+        st_fast_ret = fast;
+        if ((stepp[stnum].turns > 0) || (stepp[stnum].clockw == 0))
+        { // есть обороты против ч.с. или последнее движение было против ч.с
+            stepp[stnum].clockw = 1; // возврат в 0 по ч.с.
+            stepp[stnum].steps = stepp[stnum].angle << 3; // до нуля
+        }
+        else if ((stepp[stnum].turns < 0) || (stepp[stnum].clockw == 1))
+        { // есть обороты по ч.с. или последнее движение было по ч.с
+            stepp[stnum].clockw = 0; // возврат в 0 против ч.с.
+            stepp[stnum].steps = (STEPPER_ANGLE_TURN - stepp[stnum].angle) << 3;
+        }
         xEventGroupSetBits(xEventGroupDev, evStep);        
+        xSemaphoreGive( xSteppMutex[stnum] );
 	}
 }
 

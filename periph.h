@@ -161,7 +161,7 @@
 // - при достижениии формируется STOP_ALL
 #define WAIT_FOR_PACK		600000	// 10 мин. - уменьшить после отладки
 
-#define ADC_STAT_INTERVAL	60000	// 1 мин. - интервал отправки состояний входов АЦП
+#define ADC_STAT_INTERVAL	30000	// 30 сек. - интервал отправки состояний входов АЦП
 #define MIN_STEPS_PER_SEC	1	// кол-во импульсов в секунду датчика движения
 								//  при самом медленном вращении колеса
 // интервал между импульсами при самом медленном вращении колеса
@@ -255,6 +255,7 @@ enum {
 	CMD_PAUSE,		// пауза отдельной командой
 	CMD_POWER_OFF,
 	CMD_STOP_ALL,
+	CMD_CHECK,
 	CMD_CNT_SET_ON_MS,
 	CMD_CNT_SET_ON_STEPS,
 	CMD_CNT_RESET
