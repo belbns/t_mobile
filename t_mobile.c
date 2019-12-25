@@ -835,6 +835,7 @@ static void prvCmdMotTask(void *pvParameters)
                 break;
             case MOT_TANK:
                 set_motor_value(3, GEAR_TANK, item.p.bparam[0], item.p.bparam[1]);
+                motors.state = MOTOR_TANK;
                 break;
 			case MOT_UP_DOWN:
 				// если поворот - статус не меняется, а скоростьможет меняться
@@ -1168,6 +1169,8 @@ uint8_t sendPackToBLE(char * blepack)
 // через вызов push_state()                            
 void check_states(void)
 {
+    char sbuf[20];
+
     IF_STQ_AVAIL(1);
 	// проверка изменения очередей, отправка количества ожидающих
 	//  исполнения команд в очередях при их изменении uxQueueSpacesAvailable(xStateQueue)
@@ -1276,7 +1279,9 @@ void check_states(void)
     if ( (uxBits & dev_STEPP1_BIT) != 0 )
     {
         if (uxQueueSpacesAvailable(xStateQueueSt[0]) < 2) {
-            xQueueReset(xStateQueueSt[0]);    // сброс очереди
+            //xQueueReset(xStateQueueSt[0]);    // сброс очереди
+            xQueueReceive(xStateQueueSt[0], sbuf, 0);
+            xQueueReceive(xStateQueueSt[0], sbuf, 0);
         }
         push_state(STATE_PACK_STEPP, 0);
         xEventGroupClearBits(xEventGroupDev, dev_STEPP1_BIT);
@@ -1284,7 +1289,9 @@ void check_states(void)
     if ( (uxBits & dev_STEPP2_BIT) != 0 )
     {
         if (uxQueueSpacesAvailable(xStateQueueSt[1]) < 2) {
-            xQueueReset(xStateQueueSt[1]);    // сброс очереди
+            //xQueueReset(xStateQueueSt[1]);    // сброс очереди
+            xQueueReceive(xStateQueueSt[1], sbuf, 0);
+            xQueueReceive(xStateQueueSt[1], sbuf, 0);
         }
         push_state(STATE_PACK_STEPP, 1);
         xEventGroupClearBits(xEventGroupDev, dev_STEPP2_BIT);
@@ -1386,15 +1393,19 @@ bool push_state(uint8_t mstate, uint8_t num)
                 strcat(pack, js_coma);                  // ,
                 strcat(pack, itoa_m(motors.curr_gear, 10));
             }
-            else    // MOTOR_LEFT || MOTOR_RIGHT - 3 параметра
+            else    // MOTOR_LEFT || MOTOR_RIGHT || MOTOR_TANK - 3 параметра
             {
                 if (motors.state == MOTOR_LEFT)
                 {
                     strcat(pack, js_l);
                 }
-                else
+                else if (motors.state == MOTOR_RIGHT)
                 {
                     strcat(pack, js_r);
+                }
+                else
+                {
+                    strcat(pack, js_t);  // MOTOR_TANK 
                 }
                 strcat(pack, js_coma);                  // ,
                 strcat(pack, itoa_m(motors.gear1, 10));
