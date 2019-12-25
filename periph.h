@@ -74,7 +74,7 @@
 
 #define serRX_QUEUE_LEN		( 32 )	// длина очереди приема из UART
 #define cmd_QUEUE_LEN		( 10 )	// длина очереди команд
-#define state_QUEUE_LEN		( 40 )	// длина очереди команд
+#define state_QUEUE_LEN		( 20 )	// длина очереди статусов
 
 #define CHAN_P6				ADC_CHANNEL_1	// сенсоры на разъеме P6
 #define CHAN_3V3		    ADC_CHANNEL_0	// напряжение на ключе 3.3V / 4.64 (12.29v -> 3826)
@@ -83,7 +83,6 @@
 
 #define BLE_PACK_SIZE		20
 #define BLE_SEND_DELAY		10		// мин. интервал между передачами пакетов, mS
-//#define JFES_MAX_TOKENS_COUNT		16	-- определено в jfes.h
 
 // биты для xEventGroupBLE - события, связанные с BLE
 #define ble_RECIEVED_JSON		(1UL << 0UL)
@@ -148,13 +147,13 @@
 #define MOTOR_MAX_VALUE	32
 #define PWM_MAX_VALUE	511
 
-#define MOTOR_START_TIME	50	// время на трогание мотора, mS
+#define MOTOR_START_TIME	100	// время на трогание мотора, mS
 
 // значения коэффициентов скоростей ДПТ
 // - при записи TIM_OCX таймера будут умножаться на 16
 #define K_GEAR0			0
-#define K_GEAR1			16
-#define K_GEAR2			24
+#define K_GEAR1			20
+#define K_GEAR2			26
 #define K_GEAR3			32
 
 // Максимальное время отутствия пакетов от пульта в mS 
@@ -205,6 +204,7 @@ enum {
 	MOT_RIGHT,
 	MOT_LEFT,
 	MOT_STRAIGHT,
+	MOT_TANK,
 	MOT_PAUSE
 };
 
@@ -263,7 +263,10 @@ enum {
 
 typedef struct _ncommand_item {
 	uint16_t cmd;
-	int16_t param;
+	union {
+		int16_t param;
+		int8_t bparam[2];
+	} p;
 } ncommand_item;
 
 enum {
@@ -271,7 +274,8 @@ enum {
 	GEAR_1,
 	GEAR_2,
 	GEAR_3,
-	GEAR_NOP
+	GEAR_NOP,
+	GEAR_TANK
 };
 
 enum {
@@ -280,6 +284,7 @@ enum {
     MOTOR_DOWN,
 	MOTOR_LEFT,
     MOTOR_RIGHT,
+    MOTOR_TANK,
     MOTOR_ALARM
 };
 

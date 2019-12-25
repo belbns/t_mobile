@@ -41,6 +41,7 @@ const char js_m[] = "\"m\"";
 const char js_n[] = "\"n\"";
 const char js_r[] = "\"r\"";
 const char js_s[] = "\"s\"";
+const char js_t[] = "\"t\"";
 const char js_u[] = "\"u\"";
 const char js_v[] = "\"v\"";
 

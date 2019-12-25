@@ -109,7 +109,8 @@ uint8_t sendPackToBLE(char * blepack);
 void check_states(void);
 bool push_state(uint8_t mstate, uint8_t num);
 void put_to_cmd_queue(uint16_t cmd, int16_t iparam);
-void put_motors_cmd(char command, int16_t iparam);
+//void put_motors_cmd(char command, int16_t iparam);
+void put_motors_cmd(char command, int8_t iparam1, int8_t iparam2);
 void put_stepp_cmd(uint8_t step_num, char command, int16_t iparam);
 void put_servo_cmd(char command, int16_t iparam);
 void put_echo_cmd(char command, int16_t iparam);
@@ -159,6 +160,7 @@ QueueHandle_t xCmdServoQueue;           // очередь команд СЕРВ�
 QueueHandle_t xCmdEchoQueue;            // очередь команд эхо сенсора
 QueueHandle_t xCmdLedsQueue;            // очередь команд светодиодов
 QueueHandle_t xStateQueue;              // очередь состояний для передачи в пульт
+QueueHandle_t xStateQueueSt[2];         // очередb состояний ШД для передачи в пульт
 
 /*-----------------------------------------------------------*/
 
@@ -202,15 +204,14 @@ int main( void )
     xCmdLedsQueue = xQueueCreate(cmd_QUEUE_LEN, sizeof(ncommand_item));
     xCmdQueue = xQueueCreate(cmd_QUEUE_LEN, sizeof(ncommand_item));
     xStateQueue = xQueueCreate(state_QUEUE_LEN, sizeof(uint8_t) * (BLE_PACK_SIZE + 1));
+    // Отдельные очереди для ШД - слишком часто идут изменения
+    xStateQueueSt[0] = xQueueCreate(state_QUEUE_LEN / 2, sizeof(uint8_t) * (BLE_PACK_SIZE + 1));
+    xStateQueueSt[1] = xQueueCreate(state_QUEUE_LEN / 2, sizeof(uint8_t) * (BLE_PACK_SIZE + 1));
 
 
-
-	/* Start the blink task. */
+	/* Start tasks */
 	xTaskCreate( prvBlinkTask, "Flash", configMINIMAL_STACK_SIZE, NULL, mainBLINK_TASK_PRIORITY, NULL );
 	
-	/* Start the usart task. */
-	//xTaskCreate( prvUsartTask, "USART", configMINIMAL_STACK_SIZE, NULL, mainBLINK_TASK_PRIORITY, NULL );
-
 	xTaskCreate( prvMainTask, "MainTask", configMINIMAL_STACK_SIZE * 2, NULL, mainBLINK_TASK_PRIORITY, NULL );
 
 	xTaskCreate( prvBLETask, "BLE", configMINIMAL_STACK_SIZE, NULL, mainBLINK_TASK_PRIORITY, NULL );
@@ -465,17 +466,22 @@ static void prvMainTask(void *pvParameters)
                             put_to_cmd_queue(CMD_STOP_ALL, 0);
                         }
                     }
-                    //  MOT_STOP, MOT_UP_DOWN, MOT_RIGHT, MOT_LEFT, MOT_STRAIGHT, MOT_PAUSE
+                    //  MOT_STOP, MOT_UP_DOWN, MOT_RIGHT, MOT_LEFT, MOT_STRAIGHT, MOT_PAUSE, MOT_TANK
                     if ( !parsed && strstr(tag, jsp_mot))
                     {
                         parsed = true;
-                        if (n_params == 2)  // 2 параметра - f, b, p
+                        if (n_params == 3)  // 3 параметра - t
                         {
-                            put_motors_cmd(jparams[0][1], (int16_t)atoi(jparams[1]));
+                            put_motors_cmd(jparams[0][1], 
+                                (int8_t)atoi(jparams[1]), (int8_t)atoi(jparams[2]));
+                        }
+                        else if (n_params == 2)  // 2 параметра - f, b, p
+                        {
+                            put_motors_cmd(jparams[0][1], (int8_t)atoi(jparams[1]), 0);
                         }
                         else if (n_params == 1)  // 1 параметр - l,r,n,s
                         {
-                            put_motors_cmd(jparams[0][1], 0);
+                            put_motors_cmd(jparams[0][1], 0, 0);
                         }
 
                     }
@@ -484,9 +490,20 @@ static void prvMainTask(void *pvParameters)
                     if ( !parsed && strstr(tag, jsp_st))
                     {
                         parsed = true;
-                        if (n_params == 2)  // 2 параметра - h,n,s,l,r
+                        if (n_params == 2)  // 2 параметра - h,n,s,l,r,t
                         {
-                            put_stepp_cmd((uint8_t)atoi(jparams[1]), jparams[0][1], 0);                            
+                            if (jparams[0][1] == 't')   // обрабатываем как 'a' для ШД1
+                            {
+                                put_stepp_cmd(0, 'a', (int16_t)atoi(jparams[1]));                            
+                            }
+                            else if (jparams[0][1] == 'u')   // обрабатываем как 'a' для ШД2
+                            {
+                                put_stepp_cmd(1, 'a', (int16_t)atoi(jparams[1]));                            
+                            }
+                            else
+                            {
+                                put_stepp_cmd((uint8_t)atoi(jparams[1]), jparams[0][1], 0);                            
+                            }
                         }
                         else if (n_params == 3)  // 3 параметра - a,p
                         {
@@ -613,11 +630,15 @@ static void prvBLETask(void *pvParameters)
         TickType_t xTime2 = xTaskGetTickCount();
         // если прошло 10 mS после отправки статуса
         // и есть статус в очереди
-        if ( ((xTime2 - xTime1) >= BLE_SEND_DELAY) &&
-           (xQueueReceive(xStateQueue, sbuf, 0) == pdPASS ) )
+        if ((xTime2 - xTime1) >= BLE_SEND_DELAY)
         {
-            // отправляем пакет статуса
-            sendPackToBLE(sbuf);
+            if ((xQueueReceive(xStateQueue, sbuf, 0) == pdPASS) ||
+                (xQueueReceive(xStateQueueSt[0], sbuf, 0) == pdPASS) ||
+                (xQueueReceive(xStateQueueSt[1], sbuf, 0) == pdPASS) )   
+            {
+                // отправляем пакет статуса
+                sendPackToBLE(sbuf);
+            }
             xTime1 = xTime2;
         }
 
@@ -730,7 +751,7 @@ static void prvCmdTask(void *pvParameters)
 			switch (item.cmd)
             {
             case CMD_PAUSE:     // просто пауза
-            	running_delay(item.param, cnt_status);
+            	running_delay(item.p.param, cnt_status);
                 break;
             case CMD_CHECK:     // проверка состояния устройств
                 xEventGroupSetBits(xEventGroupDev, (const EventBits_t)0x1FFF);
@@ -806,26 +827,29 @@ static void prvCmdMotTask(void *pvParameters)
             switch (item.cmd)
             {
             case MOT_PAUSE: // просто пауза
-            	running_delay(item.param, cnt_status);
+            	running_delay(item.p.param, cnt_status);
                 break;
 			case MOT_STOP:  // останов моторов
                 set_motor_value(3, GEAR_0, GEAR_0, GEAR_0);
                 motors.state = MOTOR_STOPPED;
                 break;
+            case MOT_TANK:
+                set_motor_value(3, GEAR_TANK, item.p.bparam[0], item.p.bparam[1]);
+                break;
 			case MOT_UP_DOWN:
 				// если поворот - статус не меняется, а скоростьможет меняться
                 if (motors.state == MOTOR_LEFT)
                 {
-                	set_motor_value(2, (int8_t)item.param, GEAR_0, (int8_t)item.param);
+                	set_motor_value(2, (int8_t)item.p.param, GEAR_0, (int8_t)item.p.param);
 				}
                 else if (motors.state == MOTOR_RIGHT)
                 {
-                    set_motor_value(1, (int8_t)item.param, (int8_t)item.param, GEAR_0);
+                    set_motor_value(1, (int8_t)item.p.param, (int8_t)item.p.param, GEAR_0);
 				}
                 else
                 {
                     int8_t tg = GEAR_2;
-                    if (item.param < 0)
+                    if (item.p.param < 0)
                     {
                         motors.state = MOTOR_DOWN;
                         tg = -tg;
@@ -836,13 +860,13 @@ static void prvCmdMotTask(void *pvParameters)
                     }
 
                 	// при старте с 1-й скорости, сначала включаем 2-ю скорость
-					if ((motors.state == MOTOR_STOPPED) && (abs(item.param) ==  GEAR_1))
+					if ((motors.state == MOTOR_STOPPED) && (abs(item.p.param) ==  GEAR_1))
                     {
 						set_motor_value(3, tg, tg, tg);
                         vTaskDelay(pdMS_TO_TICKS(MOTOR_START_TIME));
 					}
                     // теперь заданную скорость
-                    set_motor_value(3, (int8_t)item.param, (int8_t)item.param, (int8_t)item.param);
+                    set_motor_value(3, (int8_t)item.p.param, (int8_t)item.p.param, (int8_t)item.p.param);
 				}
                 break;
 			case MOT_LEFT:
@@ -960,11 +984,11 @@ static void prvCmdServoTask(void *pvParameters)
         {
 			if (item.cmd == SERVO_SET)
             {
-                set_servo_angle((uint8_t)item.param);
+                set_servo_angle((uint8_t)item.p.param);
             }
             else if (item.cmd == SERVO_PAUSE)
             {
-                running_delay(item.param, cnt_status);
+                running_delay(item.p.param, cnt_status);
             }
 		}
 
@@ -1002,7 +1026,7 @@ static void prvCmdEchoTask(void *pvParameters)
 			}
             else if (item.cmd == ECHO_PAUSE)
             {
-                running_delay(item.param, cnt_status);
+                running_delay(item.p.param, cnt_status);
             }
 		}
 
@@ -1025,16 +1049,16 @@ static void prvCmdLedsTask(void *pvParameters)
         // есть ли очередная команда?
         if ( xQueueReceive( xCmdLedsQueue, &item, 0 ) == pdPASS )
         {
-        	switch (item.param)
+        	switch (item.p.param)
             {
             case LED0_MOD:
             case LED1_MOD:
             case LED2_MOD:
             case LED3_MOD:
-            	set_led((uint8_t)item.param, item.cmd);
+            	set_led((uint8_t)item.p.param, item.cmd);
                 break;
 			case LEDS_PAUSE:
-            	running_delay(item.param, cnt_status);
+            	running_delay(item.p.param, cnt_status);
 				break;
         	}
 		}
@@ -1049,7 +1073,7 @@ void procSteppCmd(uint8_t stnum, ncommand_item cmd)
 	switch (cmd.cmd)
     {
     case ST_PAUSE:  // просто пауза
-    	running_delay(cmd.param, cnt_status);
+    	running_delay(cmd.p.param, cnt_status);
         break;
 	case ST_CONT_STOP:      // перевод из STEP_MAN_CONT в STEP_MAN
     	stepp[stnum].mode = STEP_MAN;
@@ -1068,13 +1092,18 @@ void procSteppCmd(uint8_t stnum, ncommand_item cmd)
         {
         	vTaskDelay(pdMS_TO_TICKS(10));
 		}
+        int16_t adst = cmd.p.param;
+        if (adst < 0)   // отрицательный угол
+        {
+            adst += STEPPER_ANGLE_TURN; // делаем положительным (0..511)
+        }
         // <угол поворота> = <новое значение> - <текущее значение>
-        int16_t a = (int16_t)(cmd.param - stepp[stnum].angle);
+        int16_t a = (int16_t)(adst - stepp[stnum].angle);
         if (abs(a) >= (STEPPER_ANGLE_TURN / 2))
         {
             if (a > 0)
             {
-                a = -(stepp[stnum].angle + (STEPPER_ANGLE_TURN - cmd.param));
+                a = -(stepp[stnum].angle + (STEPPER_ANGLE_TURN - adst));
             }
             else // < 0
             {
@@ -1207,19 +1236,6 @@ void check_states(void)
    		xEventGroupClearBits(xEventGroupDev, dev_MOTORS_BIT);
 	}
 
-    if ( (uxBits & dev_STEPP1_BIT) != 0 )
-	{
-        IF_STQ_AVAIL(2);
-		push_state(STATE_PACK_STEPP, 0);
-   		xEventGroupClearBits(xEventGroupDev, dev_STEPP1_BIT);
-	}
-    if ( (uxBits & dev_STEPP2_BIT) != 0 )
-	{
-        IF_STQ_AVAIL(2);
-		push_state(STATE_PACK_STEPP, 1);
-   		xEventGroupClearBits(xEventGroupDev, dev_STEPP2_BIT);
-	}
-
 	EventBits_t evTmp = dev_LED0_BIT;
 	for (int8_t i = 0; i < 4; i++)
 	{
@@ -1255,6 +1271,26 @@ void check_states(void)
 		}
         evTmp = evTmp << 1; // dev_ADC1_BIT .. dev_ADC3_BIT
 	}
+
+
+    if ( (uxBits & dev_STEPP1_BIT) != 0 )
+    {
+        if (uxQueueSpacesAvailable(xStateQueueSt[0]) < 2) {
+            xQueueReset(xStateQueueSt[0]);    // сброс очереди
+        }
+        push_state(STATE_PACK_STEPP, 0);
+        xEventGroupClearBits(xEventGroupDev, dev_STEPP1_BIT);
+    }
+    if ( (uxBits & dev_STEPP2_BIT) != 0 )
+    {
+        if (uxQueueSpacesAvailable(xStateQueueSt[1]) < 2) {
+            xQueueReset(xStateQueueSt[1]);    // сброс очереди
+        }
+        push_state(STATE_PACK_STEPP, 1);
+        xEventGroupClearBits(xEventGroupDev, dev_STEPP2_BIT);
+    }
+
+
 }
 
 // формирование JSON-пакетов статусов, 
@@ -1368,72 +1404,6 @@ bool push_state(uint8_t mstate, uint8_t num)
             strcat(pack, js_rbr);                       // ]
         }
 	}
-    else if ( mstate == STATE_PACK_STEPP)
-    {
-    	if ( uxQueueSpacesAvailable(xStateQueue) < 2 )
-        {
-        	ret = false;    // статус ШД - 2 пакета
-		}
-        else
-        {
-        	char stn[2];
-            if (num == 0)
-            {
-            	stn[0] = '0';                   // ШД0
-			}
-            else
-            {
-            	stn[0] = '1';                   // ШД1
-			}
-            stn[1] = '\0';
-            strcat(pack, js_ss);
-			strcat(pack, js_delim);
-            strcat(pack, js_lbr);                   // [
-            strcat(pack, stn);                              // 0/1
-            strcat(pack, js_coma);                  // ,
-            if (stepp[num].moving == 0)                     // остановлен/в движении
-			{
-            	strcat(pack, js_s);
-			}
-            else
-			{
-            	strcat(pack, js_v);
-			}
-            strcat(pack, js_coma);                  // ,
-            switch (stepp[num].mode)
-            {
-            case STEP_MAN:
-            	strcat(pack, js_m);
-                break;
-			case STEP_MAN_CONT:
-                if (stepp[num].clockw == 0)
-                {
-                    strcat(pack, js_l);    
-                }
-                else
-                {
-            	   strcat(pack, js_r);
-                }
-                break;
-			default:
-            	strcat(pack, js_n);
-			}
-            strcat(pack, js_rbr);                   // ]
-            strcat(pack, js_end);
-            xQueueSend(xStateQueue, pack, pdMS_TO_TICKS(20));
-                        
-            strcpy(pack, js_begin);
-            strcat(pack, js_sv);
-            strcat(pack, js_delim);
-            strcat(pack, js_lbr);                   // [
-            strcat(pack, stn);                              // 0/1
-            strcat(pack, js_coma);                  // ,
-            strcat(pack, itoa_m((int16_t)stepp[num].turns, 10));
-            strcat(pack, js_coma);                  // ,
-            strcat(pack, itoa_m((int16_t)stepp[num].angle, 10));
-            strcat(pack, js_rbr);                   // ]
-		}
-	}
     else if ( mstate == STATE_PACK_LED)
     {
     	strcat(pack, js_led);
@@ -1519,7 +1489,65 @@ bool push_state(uint8_t mstate, uint8_t num)
     	strcat(pack, js_qleds);
         strcat(pack, js_delim);
         strcat(pack, itoa_m(num, 10));                            // наличие команд в очереди
-	}
+    }
+    else if ( mstate == STATE_PACK_STEPP)
+    {
+        char stn[2];
+        if (num == 0)
+        {
+            stn[0] = '0';                   // ШД0
+        }
+        else
+        {
+            stn[0] = '1';                   // ШД1
+        }
+        stn[1] = '\0';
+        strcat(pack, js_ss);
+        strcat(pack, js_delim);
+        strcat(pack, js_lbr);                   // [
+        strcat(pack, stn);                              // 0/1
+        strcat(pack, js_coma);                  // ,
+        if (stepp[num].moving == 0)                     // остановлен/в движении
+        {
+            strcat(pack, js_s);
+        }
+        else
+        {
+            strcat(pack, js_v);
+        }
+        strcat(pack, js_coma);                  // ,
+        switch (stepp[num].mode)
+        {
+            case STEP_MAN:
+                strcat(pack, js_m);
+                break;
+            case STEP_MAN_CONT:
+                if (stepp[num].clockw == 0)
+                {
+                    strcat(pack, js_l);    
+                }
+                else
+                {
+                   strcat(pack, js_r);
+                }
+                break;
+            default:
+                strcat(pack, js_n);
+        }
+        strcat(pack, js_rbr);                   // ]
+        strcat(pack, js_end);
+        xQueueSend(xStateQueueSt[num], pack, pdMS_TO_TICKS(20));
+        strcpy(pack, js_begin);
+        strcat(pack, js_sv);
+        strcat(pack, js_delim);
+        strcat(pack, js_lbr);                   // [
+        strcat(pack, stn);                              // 0/1
+        strcat(pack, js_coma);                  // ,
+        strcat(pack, itoa_m((int16_t)stepp[num].turns, 10));
+        strcat(pack, js_coma);                  // ,
+        strcat(pack, itoa_m((int16_t)stepp[num].angle, 10));
+        strcat(pack, js_rbr);                   // ]
+    }
     else
     {
     	ret = false;
@@ -1528,9 +1556,19 @@ bool push_state(uint8_t mstate, uint8_t num)
     if (ret)
     {       
     	strcat(pack, js_end);
-        if (xQueueSend(xStateQueue, pack, 0) != pdPASS)
+        if (mstate == STATE_PACK_STEPP)
         {
-            ret = false;
+            if (xQueueSend(xStateQueueSt[num], pack, 0) != pdPASS)
+            {
+                ret = false;
+            }
+        }
+        else
+        {
+            if (xQueueSend(xStateQueue, pack, 0) != pdPASS)
+            {
+                ret = false;
+            }
         }
 	}
     return ret;
@@ -1541,7 +1579,7 @@ void put_to_cmd_queue(uint16_t cmd, int16_t iparam)
 	ncommand_item item;
              
     item.cmd = cmd;
-    item.param = iparam;
+    item.p.param = iparam;
   
     uint8_t cc = 5;
     while ( (uxQueueSpacesAvailable(xCmdQueue) == 0) && (cc-- > 0) ) // ждем до 100mS
@@ -1554,11 +1592,19 @@ void put_to_cmd_queue(uint16_t cmd, int16_t iparam)
 	}
 }
 
-void put_motors_cmd(char command, int16_t iparam)
+void put_motors_cmd(char command, int8_t iparam1, int8_t iparam2)
 {
 	ncommand_item item;
 
-    item.param = iparam;
+    if (command == 't')
+    {
+        item.p.bparam[0] = iparam1;
+        item.p.bparam[1] = iparam2;
+    }
+    else
+    {
+        item.p.param = iparam1;
+    }
 
     switch (command)
     {       
@@ -1574,6 +1620,9 @@ void put_motors_cmd(char command, int16_t iparam)
         break;
 	case 'n':
     	item.cmd = MOT_STRAIGHT;
+        break;
+    case 't':
+        item.cmd = MOT_TANK;
         break;
 	case 'p':
     	item.cmd = MOT_PAUSE;
@@ -1597,7 +1646,7 @@ void put_stepp_cmd(uint8_t step_num, char command, int16_t iparam)
 {
 	ncommand_item item;
 
-    item.param = iparam;
+    item.p.param = iparam;
     switch (command)
     {
     case 'a': // новое значение угла
@@ -1656,11 +1705,11 @@ void put_leds_cmd(char command, uint16_t iparam)
 
     if (command == 'p')     // PAUSE
     {
-    	item.param = iparam;
+    	item.p.param = iparam;
 	}
     else
     {
-    	item.param = iparam & 0x03; // LED0_MOD..LED3_MOD
+    	item.p.param = iparam & 0x03; // LED0_MOD..LED3_MOD
 	}
                 
     switch (command)
@@ -1696,18 +1745,18 @@ void put_servo_cmd(char command, int16_t iparam)
     if (command == 'p')     // PAUSE
     {
     	item.cmd = SERVO_PAUSE;
-        item.param = iparam;
+        item.p.param = iparam;
 	}
     else
     {
     	item.cmd = SERVO_SET;
         if ( (iparam < 0) || (iparam > 180) )
         {
-        	item.param = 90;
+        	item.p.param = 90;
 		}
         else
         {
-        	item.param = (uint8_t)iparam; // SET
+        	item.p.param = (uint8_t)iparam; // SET
 		}
 	}
     uint8_t cc = 5;
@@ -1734,7 +1783,7 @@ void put_echo_cmd(char command, int16_t iparam)
     	item.cmd = ECHO_PAUSE;
 	}
 
-    item.param = iparam;
+    item.p.param = iparam;
 
     uint8_t cc = 5;
     while ( (uxQueueSpacesAvailable(xCmdEchoQueue) == 0) && (cc-- > 0) ) //ждем до 100mS
