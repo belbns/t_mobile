@@ -428,8 +428,14 @@ static void prvMainTask(void *pvParameters)
                     if (strstr(tag, jsp_check))
                     {
                         parsed = true;
-                        put_to_cmd_queue(CMD_CHECK, 0);
-
+                        if (strstr(jparams[0], js_true))
+                        {
+                            put_to_cmd_queue(CMD_CHECK, 1);                        
+                        }
+                        else
+                        {
+                            put_to_cmd_queue(CMD_CHECK, 0);
+                        }
                     }
                     // CMD_POWER_OFF
                     if ( !parsed && strstr(tag, jsp_pwroff))
@@ -754,7 +760,14 @@ static void prvCmdTask(void *pvParameters)
             	running_delay(item.p.param, cnt_status);
                 break;
             case CMD_CHECK:     // проверка состояния устройств
-                xEventGroupSetBits(xEventGroupDev, (const EventBits_t)0x1FFF);
+                if (item.p.param == 0)  // Только АЦП
+                {
+                    xEventGroupSetBits(xEventGroupDev, (const EventBits_t)0x0F);    
+                }
+                else                    // всё
+                {
+                    xEventGroupSetBits(xEventGroupDev, (const EventBits_t)0x1FFF);
+                }
                 break;
 			case CMD_POWER_OFF: // выключить
             	flag_power_off = 1;
