@@ -76,7 +76,8 @@ void vApplicationTickHook( void )
 
     // тактирование ШД0 - по четным тактам, ШД1 - по нечетным.
     uint8_t i = stepp_count & 1;
-    EventBits_t evStep = dev_STEPP1_BIT << i;   // если 1 -> dev_STEPP2_BIT
+    EventBits_t evStepS = dev_STEPP1S_BIT << i;   // если 1 -> dev_STEPP2S_BIT
+    EventBits_t evStepA = dev_STEPP1A_BIT << i;   // если 1 -> dev_STEPP2A_BIT
     // захватываем ШД
     if ( xSemaphoreTakeFromISR( xSteppMutex[i], &xHigherPriorityTaskWoken )== pdPASS )
     {
@@ -96,7 +97,6 @@ void vApplicationTickHook( void )
                     stepp[i].moving = 0;
                     st_fast_ret = 0;
                 }
-                xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
             }
             else    // непрерывное движение
             {
@@ -106,7 +106,8 @@ void vApplicationTickHook( void )
                 
             // приращиваем текущий угол - последние 8 тактов учитываются здесь
             angle_update(i);
-            xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
+            xEventGroupSetBitsFromISR(xEventGroupDev, evStepS, &xHigherPriorityTaskWoken);
+            xEventGroupSetBitsFromISR(xEventGroupDev, evStepA, &xHigherPriorityTaskWoken);
         }
         else if ( stepp[i].steps > 0 )  // еще есть куда шагать
         {
@@ -118,7 +119,10 @@ void vApplicationTickHook( void )
             if ((pos == 0) && stepp[i].moving)
             {
                 angle_update(i);
-                xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
+                if ((stepp[i].angle & 0x07) == 0)
+                {
+                    xEventGroupSetBitsFromISR(xEventGroupDev, evStepA, &xHigherPriorityTaskWoken);           
+                }
             }
 
             if ( stepp[i].clockw )
@@ -136,8 +140,11 @@ void vApplicationTickHook( void )
                         
             // чтобы не было приращения на начальном нуле
             // признак движения устанавливаем после обработки 1-го шага
-            stepp[i].moving = 1;
-            xEventGroupSetBitsFromISR(xEventGroupDev, evStep, &xHigherPriorityTaskWoken);
+            if (stepp[i].moving == 0)
+            {
+                stepp[i].moving = 1;
+                xEventGroupSetBitsFromISR(xEventGroupDev, evStepS, &xHigherPriorityTaskWoken);    
+            }
         }
         xSemaphoreGiveFromISR( xSteppMutex[i], &xHigherPriorityTaskWoken );
     }
@@ -146,6 +153,8 @@ void vApplicationTickHook( void )
 // инкремент/декремент угла ШД
 void angle_update(uint8_t stnum)
 {
+    //EventBits_t evStepA = dev_STEPP1A_BIT << stnum;
+
     if ( stepp[stnum].clockw )  // по ч.с. 0, 511, 510, ..., 1, 0, 511
     {
         if (stepp[stnum].angle == 0)
@@ -339,7 +348,7 @@ void oneStep(uint8_t pos, uint8_t stpr) {
 
 void stepp_stop(uint8_t stnum)
 {
-    EventBits_t evStep = dev_STEPP1_BIT << stnum;   // если 1 -> dev_STEPP2_BIT
+    //EventBits_t evStep = dev_STEPP1S_BIT << stnum;   // если 1 -> dev_STEPP2_BIT
 	if ( stnum < 2 )
 	{
 		gpio_clear(STEPP_PORT, step_pins[stnum][0]);	// MS0_PIN
@@ -349,7 +358,7 @@ void stepp_stop(uint8_t stnum)
 
         stepp[stnum].last_step = 0;
         stepp[stnum].steps = 0;
-        xEventGroupSetBits(xEventGroupDev, evStep); 
+        //xEventGroupSetBits(xEventGroupDev, evStepS); 
 	}
 }
 
@@ -357,7 +366,7 @@ void stepp_stop(uint8_t stnum)
 // последующее движение возобновляется в vApplicationTickHook
 void stepp_start_cont(uint8_t stnum, uint8_t cmd)
 {
-    EventBits_t evStep = dev_STEPP1_BIT << stnum;   // если 1 -> dev_STEPP2_BIT
+    EventBits_t evStepS = dev_STEPP1S_BIT << stnum;   // если 1 -> dev_STEPP2_BIT
 
     stepp[stnum].steps = stepp[stnum].steps & 7;
     // ждем окончания движения
@@ -387,14 +396,14 @@ void stepp_start_cont(uint8_t stnum, uint8_t cmd)
         }
     }
 
-    xEventGroupSetBits(xEventGroupDev, evStep);
+    xEventGroupSetBits(xEventGroupDev, evStepS);
 }
 
 
 // процедура должна вызываться при захваченом xSteppMutex[stnum]
 void stepp_clk_cclk(uint8_t stnum, int16_t sparam)
 {
-    EventBits_t evStep = dev_STEPP1_BIT << stnum;   // если 1 -> dev_STEPP2_BIT
+    EventBits_t evStepS = dev_STEPP1S_BIT << stnum;   // если 1 -> dev_STEPP2_BIT
 
 	// ждем окончания движения
 	while ( (stepp[stnum].steps > 0) || stepp[stnum].last_step )
@@ -414,13 +423,13 @@ void stepp_clk_cclk(uint8_t stnum, int16_t sparam)
 	}
 	stepp[stnum].steps = steps << 3;	// *8
 
-    xEventGroupSetBits(xEventGroupDev, evStep);        
+    xEventGroupSetBits(xEventGroupDev, evStepS);        
 }
 
 // возврат ШД в нулевое положение
 void stepp_to_null(uint8_t stnum, uint8_t fast)
 {
-    EventBits_t evStep = dev_STEPP1_BIT << stnum;   // если 1 -> dev_STEPP2_BIT
+    EventBits_t evStepS = dev_STEPP1S_BIT << stnum;   // если 1 -> dev_STEPP2_BIT
 
 	if ( xSemaphoreTake( xSteppMutex[stnum], pdMS_TO_TICKS(100)))
 	{
@@ -445,7 +454,7 @@ void stepp_to_null(uint8_t stnum, uint8_t fast)
             stepp[stnum].clockw = 0; // возврат в 0 против ч.с.
             stepp[stnum].steps = (STEPPER_ANGLE_TURN - stepp[stnum].angle) << 3;
         }
-        xEventGroupSetBits(xEventGroupDev, evStep);        
+        xEventGroupSetBits(xEventGroupDev, evStepS);        
         xSemaphoreGive( xSteppMutex[stnum] );
 	}
 }

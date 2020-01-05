@@ -111,10 +111,12 @@
 #define dev_LED2_BIT			(1UL << 6UL)
 #define dev_LED3_BIT			(1UL << 7UL)
 #define dev_MOTORS_BIT			(1UL << 8UL)
-#define dev_STEPP1_BIT			(1UL << 9UL)
-#define dev_STEPP2_BIT			(1UL << 10UL)
-#define dev_SERVO_BIT			(1UL << 11UL)
-#define dev_ECHO_BIT			(1UL << 12UL)
+#define dev_STEPP1A_BIT			(1UL << 9UL)	// изменение угла
+#define dev_STEPP2A_BIT			(1UL << 10UL)
+#define dev_STEPP1S_BIT			(1UL << 11UL)	// изменение состояния
+#define dev_STEPP2S_BIT			(1UL << 12UL)
+#define dev_SERVO_BIT			(1UL << 13UL)
+#define dev_ECHO_BIT			(1UL << 14UL)
 
 
 // АЦП val = U * 1000 / 4.64
@@ -176,7 +178,8 @@ enum {
 	STATE_PACK_LOWBAT,
 	STATE_PACK_OVERLOAD,
 	STATE_PACK_MOTORS,
-	STATE_PACK_STEPP,
+	STATE_PACK_STEPP_A,
+	STATE_PACK_STEPP_S,
 	STATE_PACK_LED,
 	STATE_PACK_SERVO,
 	STATE_PACK_ECHO,

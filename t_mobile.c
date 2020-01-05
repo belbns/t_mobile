@@ -777,6 +777,8 @@ static void prvCmdTask(void *pvParameters)
 				// останавливаем ШД
             	for (uint8_t i = 0; i < 2; i++)
             	{
+                    EventBits_t evStepA = dev_STEPP1A_BIT << i;
+                    EventBits_t evStepS = dev_STEPP1S_BIT << i;
             		stepp[i].mode = STEP_MAN;  // перевод вручной режим
                 	if ( xSemaphoreTake(xSteppMutex[i], pdMS_TO_TICKS(50)) == pdTRUE )
 					{
@@ -790,7 +792,9 @@ static void prvCmdTask(void *pvParameters)
                 	else
                 	{
                 		// не смогли получить мьютекс - останавливаем аварийно
-						stepp_stop(0);
+						stepp_stop(i);
+                        xEventGroupSetBits(xEventGroupDev, evStepA);
+                        xEventGroupSetBits(xEventGroupDev, evStepS);
 					}
 				}
             	// останов моторов
@@ -1288,7 +1292,41 @@ void check_states(void)
         evTmp = evTmp << 1; // dev_ADC1_BIT .. dev_ADC3_BIT
 	}
 
+    if ( (uxBits & dev_STEPP1A_BIT) != 0 )
+    {
+        if (uxQueueSpacesAvailable(xStateQueueSt[0]) < 1) {
+            xQueueReceive(xStateQueueSt[0], sbuf, 0);
+        }
+        push_state(STATE_PACK_STEPP_A, 0);
+        xEventGroupClearBits(xEventGroupDev, dev_STEPP1A_BIT);
+    }
+    if ( (uxBits & dev_STEPP2A_BIT) != 0 )
+    {
+        if (uxQueueSpacesAvailable(xStateQueueSt[1]) < 1) {
+            xQueueReceive(xStateQueueSt[1], sbuf, 0);
+        }
+        push_state(STATE_PACK_STEPP_A, 1);
+        xEventGroupClearBits(xEventGroupDev, dev_STEPP2A_BIT);
+    }
 
+    if ( (uxBits & dev_STEPP1S_BIT) != 0 )
+    {
+        if (uxQueueSpacesAvailable(xStateQueueSt[0]) < 1) {
+            xQueueReceive(xStateQueueSt[0], sbuf, 0);
+        }
+        push_state(STATE_PACK_STEPP_S, 0);
+        xEventGroupClearBits(xEventGroupDev, dev_STEPP1S_BIT);
+    }
+    if ( (uxBits & dev_STEPP2S_BIT) != 0 )
+    {
+        if (uxQueueSpacesAvailable(xStateQueueSt[1]) < 1) {
+            xQueueReceive(xStateQueueSt[1], sbuf, 0);
+        }
+        push_state(STATE_PACK_STEPP_S, 1);
+        xEventGroupClearBits(xEventGroupDev, dev_STEPP2S_BIT);
+    }
+
+    /*
     if ( (uxBits & dev_STEPP1_BIT) != 0 )
     {
         if (uxQueueSpacesAvailable(xStateQueueSt[0]) < 2) {
@@ -1309,7 +1347,7 @@ void check_states(void)
         push_state(STATE_PACK_STEPP, 1);
         xEventGroupClearBits(xEventGroupDev, dev_STEPP2_BIT);
     }
-
+    */
 
 }
 
@@ -1318,6 +1356,17 @@ void check_states(void)
 bool push_state(uint8_t mstate, uint8_t num)
 {
     static char pack[20];
+
+    char stn[2];
+    if (num == 0)
+    {
+        stn[0] = '0';                   // ШД0
+    }
+    else
+    {
+        stn[0] = '1';                   // ШД1
+    }
+    stn[1] = '\0';
 
     bool ret = true;
     strcpy(pack, js_begin);
@@ -1514,18 +1563,8 @@ bool push_state(uint8_t mstate, uint8_t num)
         strcat(pack, js_delim);
         strcat(pack, itoa_m(num, 10));                            // наличие команд в очереди
     }
-    else if ( mstate == STATE_PACK_STEPP)
+    else if ( mstate == STATE_PACK_STEPP_S)
     {
-        char stn[2];
-        if (num == 0)
-        {
-            stn[0] = '0';                   // ШД0
-        }
-        else
-        {
-            stn[0] = '1';                   // ШД1
-        }
-        stn[1] = '\0';
         strcat(pack, js_ss);
         strcat(pack, js_delim);
         strcat(pack, js_lbr);                   // [
@@ -1559,9 +1598,12 @@ bool push_state(uint8_t mstate, uint8_t num)
                 strcat(pack, js_n);
         }
         strcat(pack, js_rbr);                   // ]
-        strcat(pack, js_end);
-        xQueueSend(xStateQueueSt[num], pack, pdMS_TO_TICKS(20));
-        strcpy(pack, js_begin);
+        //strcat(pack, js_end);
+        //xQueueSend(xStateQueueSt[num], pack, pdMS_TO_TICKS(20));
+    }
+    else if ( mstate == STATE_PACK_STEPP_A)
+    {
+        //strcpy(pack, js_begin);
         strcat(pack, js_sv);
         strcat(pack, js_delim);
         strcat(pack, js_lbr);                   // [
@@ -1580,7 +1622,7 @@ bool push_state(uint8_t mstate, uint8_t num)
     if (ret)
     {       
     	strcat(pack, js_end);
-        if (mstate == STATE_PACK_STEPP)
+        if ((mstate == STATE_PACK_STEPP_A) || (mstate == STATE_PACK_STEPP_S))
         {
             if (xQueueSend(xStateQueueSt[num], pack, 0) != pdPASS)
             {
